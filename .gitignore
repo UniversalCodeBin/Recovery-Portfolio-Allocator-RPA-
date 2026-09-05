@@ -1,0 +1,44 @@
+.venv/
+__pycache__/
+*.pyc
+results/
+.pytest_cache/
+
+# Step 1 generated (reproducible-from-source) data artifacts
+data/raw/
+data/cleaned/
+data/validated/
+data/splits/
+reports/data_quality/*.json
+reports/data_quality/*.md
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+frontend/.vite/
+frontend/.vite-temp/
+
+# IDE/Editor
+.crush/
+.idea/
+.vscode/
+
+# Generated artifacts
+artifacts/
+reports/
+rpa_runs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python build
+*.egg-info/
+dist/
+build/
+
+# Secrets
+.env
+*.env
