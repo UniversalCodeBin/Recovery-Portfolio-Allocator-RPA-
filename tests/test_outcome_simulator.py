@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
+from config import Action
 from data_generation import SyntheticDataGenerator
 from outcome_simulator import (
     generate_uniform_draws,
     simulate_outcomes,
     simulate_outcomes_from_draws,
 )
-from config import Action
 
 
 def test_outcome_reproducible_same_seed():
@@ -42,12 +42,8 @@ def test_higher_prob_action_recovers_more_in_expectation():
     gen = SyntheticDataGenerator(2)
     txn = gen.generate(200, "mono")
     u = generate_uniform_draws(len(txn), batch_seed=4)
-    o_noop = simulate_outcomes_from_draws(
-        txn, [Action.NO_INTERVENTION] * len(txn), u
-    )
-    o_esc = simulate_outcomes_from_draws(
-        txn, [Action.HUMAN_ESCALATION] * len(txn), u
-    )
+    o_noop = simulate_outcomes_from_draws(txn, [Action.NO_INTERVENTION] * len(txn), u)
+    o_esc = simulate_outcomes_from_draws(txn, [Action.HUMAN_ESCALATION] * len(txn), u)
     assert o_esc.sum() > o_noop.sum()
 
 

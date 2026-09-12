@@ -27,16 +27,16 @@ Each execution row records: transaction_id, action_id, plan name, status
 (total action + incentive cost), net_recovered_amount, seed, and a simulation
 flag.
 """
+
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
-from rpa.config import EVEngineConfig, SIMULATOR_VERSION, SimulationConfig
+from rpa.config import SIMULATOR_VERSION, EVEngineConfig, SimulationConfig
 from rpa.loading import ActionSpec
 from rpa.optimizer import PortfolioPlan
 from rpa.policy_engine import PolicyEngine, PolicyVerdict
@@ -50,7 +50,7 @@ BLOCKED = "blocked"
 
 @dataclass
 class ExecutionResult:
-    executions: List[Dict]                  # one per transaction
+    executions: list[dict]  # one per transaction
     plan_name: str
     batch_seed: int
     net_recovered_total: float
@@ -60,11 +60,11 @@ class ExecutionResult:
     def to_frame(self) -> pd.DataFrame:
         return pd.DataFrame(self.executions)
 
-    def batch_metrics(self) -> Dict:
+    def batch_metrics(self) -> dict:
         df = self.to_frame()
         return {
             "plan_name": self.plan_name,
-            "n_transactions": int(len(df)),
+            "n_transactions": len(df),
             "n_attempted": int(df["attempted"].sum()),
             "n_successful": int((df["status"] == SUCCESSFUL).sum()),
             "n_failed": int((df["status"] == FAILED).sum()),
@@ -79,9 +79,9 @@ class ExecutionResult:
 class ExecutionSimulator:
     def __init__(
         self,
-        ev_config: EVEngineConfig = EVEngineConfig(),
-        sim_config: SimulationConfig = SimulationConfig(),
-        policy_engine: Optional[PolicyEngine] = None,
+        ev_config: EVEngineConfig = EVEngineConfig(),  # noqa: B008
+        sim_config: SimulationConfig = SimulationConfig(),  # noqa: B008
+        policy_engine: PolicyEngine | None = None,
     ) -> None:
         self.ev_config = ev_config
         self.sim_config = sim_config
@@ -89,12 +89,10 @@ class ExecutionSimulator:
 
     @staticmethod
     def _derive_seed(batch_seed: int, tag: str) -> int:
-        digest = hashlib.sha256(
-            f"{batch_seed}:{tag}".encode()
-        ).hexdigest()
+        digest = hashlib.sha256(f"{batch_seed}:{tag}".encode()).hexdigest()
         return int(digest[:16], 16)
 
-    def _approved_actions(self, verdicts: List[PolicyVerdict]) -> set[tuple[str, str]]:
+    def _approved_actions(self, verdicts: list[PolicyVerdict]) -> set[tuple[str, str]]:
         """Return approvals at the transaction/action granularity.
 
         A policy verdict is never global to an action: retry limits, EV, and
@@ -102,9 +100,7 @@ class ExecutionSimulator:
         for one transaction while allowing it for another.
         """
         return {
-            (v.transaction_id, v.action_id)
-            for v in verdicts
-            if v.decision == "ALLOW"
+            (v.transaction_id, v.action_id) for v in verdicts if v.decision == "ALLOW"
         }
 
     def execute(
@@ -112,8 +108,8 @@ class ExecutionSimulator:
         plan: PortfolioPlan,
         transactions: pd.DataFrame,
         probabilities: np.ndarray,
-        actions: List[ActionSpec],
-        verdicts: List[PolicyVerdict],
+        actions: list[ActionSpec],
+        verdicts: list[PolicyVerdict],
         batch_seed: int,
     ) -> ExecutionResult:
         """Simulate execution of `plan`.
@@ -130,13 +126,17 @@ class ExecutionSimulator:
 
         # Seeded uniform draws for outcome success & partial fraction.
         rng_success = np.random.default_rng(
-            self._derive_seed(batch_seed, f"{self.sim_config.seed_salt}:success:{plan.name}")
+            self._derive_seed(
+                batch_seed, f"{self.sim_config.seed_salt}:success:{plan.name}"
+            )
         )
         rng_fraction = np.random.default_rng(
-            self._derive_seed(batch_seed, f"{self.sim_config.seed_salt}:fraction:{plan.name}")
+            self._derive_seed(
+                batch_seed, f"{self.sim_config.seed_salt}:fraction:{plan.name}"
+            )
         )
 
-        rows: List[Dict] = []
+        rows: list[dict] = []
         for i, txn in enumerate(plan.transaction_ids):
             action = plan.actions[i]
             if (txn, action.action_id) not in approved:
@@ -144,8 +144,13 @@ class ExecutionSimulator:
                 continue
             # ---- execute (simulate) ----
             amounts = amounts_by_txn.loc[txn]
-            p = float(np.clip(probabilities[txn_idx[txn], action_idx[action.action_id]],
-                              self.ev_config.prob_floor, self.ev_config.prob_ceil))
+            p = float(
+                np.clip(
+                    probabilities[txn_idx[txn], action_idx[action.action_id]],
+                    self.ev_config.prob_floor,
+                    self.ev_config.prob_ceil,
+                )
+            )
             recoverable = float(amounts) * (1.0 - self.ev_config.recovery_friction)
 
             success_draw = rng_success.random()
@@ -156,28 +161,35 @@ class ExecutionSimulator:
             status = SUCCESSFUL if succeeded else FAILED
             if succeeded:
                 frac_draw = rng_fraction.random()
-                frac = 1.0 + (self.sim_config.partial_low - 1.0) * frac_draw \
-                    if False else (self.sim_config.partial_low +
-                                   (self.sim_config.partial_high - self.sim_config.partial_low)
-                                   * frac_draw)
+                frac = (
+                    1.0 + (self.sim_config.partial_low - 1.0) * frac_draw
+                    if False
+                    else (
+                        self.sim_config.partial_low
+                        + (self.sim_config.partial_high - self.sim_config.partial_low)
+                        * frac_draw
+                    )
+                )
                 recovered = recoverable * frac
             else:
                 recovered = 0.0
 
-            rows.append({
-                "transaction_id": txn,
-                "action_id": action.action_id,
-                "action_type": action.action_type,
-                "plan_name": plan.name,
-                "status": status,
-                "attempted": 1,
-                "recovered_amount": round(float(recovered), 4),
-                "recovery_cost": round(float(cost), 4),
-                "net_recovered_amount": round(float(recovered - cost), 4),
-                "p_predicted": round(p, 6),
-                "seed": batch_seed,
-                "simulation": True,
-            })
+            rows.append(
+                {
+                    "transaction_id": txn,
+                    "action_id": action.action_id,
+                    "action_type": action.action_type,
+                    "plan_name": plan.name,
+                    "status": status,
+                    "attempted": 1,
+                    "recovered_amount": round(float(recovered), 4),
+                    "recovery_cost": round(float(cost), 4),
+                    "net_recovered_amount": round(float(recovered - cost), 4),
+                    "p_predicted": round(p, 6),
+                    "seed": batch_seed,
+                    "simulation": True,
+                }
+            )
 
         net = sum(float(r["net_recovered_amount"]) for r in rows)
         return ExecutionResult(
@@ -190,11 +202,13 @@ class ExecutionSimulator:
     def _recovery_cost(self, action: ActionSpec) -> float:
         """Total rupee cost: handling cost + incentive budget + handling fee."""
         action_cost = float(action.action_cost)
-        incentive_units = float(action.resource_requirements.get("incentive_budget", 0.0))
+        incentive_units = float(
+            action.resource_requirements.get("incentive_budget", 0.0)
+        )
         incentive_cost = incentive_units * self.ev_config.incentive_handling_fee
         return action_cost + incentive_cost
 
-    def _blocked_row(self, txn: str, action: ActionSpec) -> Dict:
+    def _blocked_row(self, txn: str, action: ActionSpec) -> dict:
         return {
             "transaction_id": txn,
             "action_id": action.action_id,
@@ -211,4 +225,4 @@ class ExecutionSimulator:
         }
 
 
-__all__ = ["ExecutionSimulator", "ExecutionResult"]
+__all__ = ["ExecutionResult", "ExecutionSimulator"]

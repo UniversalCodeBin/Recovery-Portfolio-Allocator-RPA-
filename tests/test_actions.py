@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from actions import (
@@ -9,9 +8,8 @@ from actions import (
     ResourceVector,
     action_resource_vector,
     capacity_dict_from_scenario,
-    build_initial_resource_state,
 )
-from config import Action, SCENARIOS
+from config import SCENARIOS, Action
 
 
 def test_resource_vector_total_units():

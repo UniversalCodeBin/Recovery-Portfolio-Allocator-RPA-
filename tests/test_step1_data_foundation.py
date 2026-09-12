@@ -3,6 +3,7 @@
 Covers the 13 acceptance tests mandated for Step 1 plus an optional PostgreSQL
 round-trip test (skipped automatically when no database is reachable).
 """
+
 from __future__ import annotations
 
 import os
@@ -131,7 +132,9 @@ def test_invalid_recovery_amounts_rejected(frames, cleaned):
 # ---------------------------------------------------------------------------
 # 6. Invalid categorical values are rejected
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("column", ["payment_method", "bank", "failure_reason", "transaction_status"])
+@pytest.mark.parametrize(
+    "column", ["payment_method", "bank", "failure_reason", "transaction_status"]
+)
 def test_invalid_categorical_values_rejected(frames, column):
     cp = CleaningPipeline()
     tx = frames["transactions"].copy()
@@ -173,7 +176,10 @@ def test_foreign_key_relationships_valid(cleaned):
     df["action_outcomes"] = ao
     res = validate(df)
     assert res.n_rejected >= 1
-    assert any(f.table == "action_outcomes" and f.field == "transaction_id" for f in res.failures)
+    assert any(
+        f.table == "action_outcomes" and f.field == "transaction_id"
+        for f in res.failures
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -286,9 +292,15 @@ def test_no_train_test_leakage(cleaned):
 # ---------------------------------------------------------------------------
 def test_schema_covers_all_entities():
     from data_core.schema import SCHEMA_SQL
+
     entities = [
-        "customers", "transactions", "recovery_actions", "action_outcomes",
-        "recovery_predictions", "resource_constraints", "recovery_decisions",
+        "customers",
+        "transactions",
+        "recovery_actions",
+        "action_outcomes",
+        "recovery_predictions",
+        "resource_constraints",
+        "recovery_decisions",
         "audit_logs",
     ]
     for e in entities:
@@ -303,7 +315,9 @@ def test_schema_covers_all_entities():
 def test_outcome_before_transaction_is_rejected(cleaned):
     ao = cleaned["action_outcomes"].copy()
     # Force an outcome attempted 5 days BEFORE the originating transaction.
-    txn_ts = cleaned["transactions"].set_index("transaction_id")["transaction_timestamp"]
+    txn_ts = cleaned["transactions"].set_index("transaction_id")[
+        "transaction_timestamp"
+    ]
     tid = ao.iloc[0]["transaction_id"]
     ts = pd.to_datetime(txn_ts[tid], utc=True)
     ao.loc[0, "attempted_at"] = (ts - pd.Timedelta(days=5)).isoformat()
@@ -311,7 +325,10 @@ def test_outcome_before_transaction_is_rejected(cleaned):
     df["action_outcomes"] = ao
     res = validate(df)
     assert res.n_rejected >= 1
-    assert any(f.table == "action_outcomes" and "before transaction" in f.message for f in res.failures)
+    assert any(
+        f.table == "action_outcomes" and "before transaction" in f.message
+        for f in res.failures
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -323,8 +340,9 @@ def pg_conn():
         pytest.skip("PostgreSQL not configured (set RPA_DB_* env vars).")
     try:
         from data_core.db import connect
+
         return connect()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         pytest.skip(f"PostgreSQL unreachable: {exc}")
 
 

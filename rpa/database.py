@@ -10,14 +10,14 @@ Provides:
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 import logging
-import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 from rpa.settings import get_settings
@@ -28,6 +28,7 @@ try:
     from psycopg import sql
     from psycopg.rows import dict_row
     from psycopg_pool import ConnectionPool
+
     _HAS_DB = True
 except ImportError:
     psycopg = None  # type: ignore
@@ -47,7 +48,7 @@ class PoolConfig:
     min_size: int
     max_size: int
     acquire_timeout: float
-    kwargs: Dict[str, Any]
+    kwargs: dict[str, Any]
 
 
 class DatabaseError(Exception):
@@ -74,7 +75,7 @@ class OptimisticLockError(DatabaseError):
     """Concurrent modification detected."""
 
 
-_pool: Optional[ConnectionPool] = None
+_pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
 
 
@@ -163,9 +164,7 @@ def run_migrations(conn=None):
 
     def _run(conn) -> list:
         with conn.cursor() as cur:
-            cur.execute(
-                f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA}"'
-            )
+            cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA}"')
             cur.execute(
                 f"""
                 CREATE TABLE IF NOT EXISTS "{SCHEMA}".schema_migrations (
@@ -197,8 +196,8 @@ def run_migrations(conn=None):
     if conn is not None:
         return _run(conn)
     else:
-        with transaction() as conn:
-            return _run(conn)
+        with transaction() as migration_conn:
+            return _run(migration_conn)
 
 
 def _qualified(table: str) -> sql.Identifier:
@@ -209,12 +208,13 @@ def _qualified(table: str) -> sql.Identifier:
 # Repository classes
 # ---------------------------------------------------------------------------
 
+
 class TenantRepository:
     """Tenant management."""
 
     @staticmethod
     def create(
-        conn: psycopg.Connection, name: str, tenant_id: Optional[UUID] = None
+        conn: psycopg.Connection, name: str, tenant_id: UUID | None = None
     ) -> UUID:
         tid = tenant_id or uuid4()
         with conn.cursor() as cur:
@@ -225,19 +225,19 @@ class TenantRepository:
         return tid
 
     @staticmethod
-    def get(conn: psycopg.Connection, tenant_id: UUID) -> Optional[Dict]:
+    def get(conn: psycopg.Connection, tenant_id: UUID) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 f'SELECT * FROM "{SCHEMA}".tenants WHERE tenant_id = %s',
                 (str(tenant_id),),
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
-    def list(conn: psycopg.Connection) -> List[Dict]:
+    def list(conn: psycopg.Connection) -> builtins.list[dict]:
         with conn.cursor() as cur:
             cur.execute(f'SELECT * FROM "{SCHEMA}".tenants ORDER BY created_at DESC')
-            return cur.fetchall()
+            return cur.fetchall()  # type: ignore[return-value]
 
 
 class UserRepository:
@@ -265,7 +265,7 @@ class UserRepository:
     @staticmethod
     def get_by_email(
         conn: psycopg.Connection, tenant_id: UUID, email: str
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -274,32 +274,34 @@ class UserRepository:
                 """,
                 (str(tenant_id), email),
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
-    def get(conn: psycopg.Connection, user_id: UUID) -> Optional[Dict]:
+    def get(conn: psycopg.Connection, user_id: UUID) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 f'SELECT * FROM "{SCHEMA}".users WHERE user_id = %s',
                 (str(user_id),),
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
-    def list(conn: psycopg.Connection, tenant_id: UUID) -> List[Dict]:
+    def list(conn: psycopg.Connection, tenant_id: UUID) -> builtins.list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 f'SELECT * FROM "{SCHEMA}".users WHERE tenant_id = %s ORDER BY created_at DESC',
                 (str(tenant_id),),
             )
-            return cur.fetchall()
+            return cur.fetchall()  # type: ignore[return-value]
 
 
 class RevokedTokenRepository:
     """Token revocation list."""
 
     @staticmethod
-    def add(conn: psycopg.Connection, token_id: UUID, user_id: UUID, expires_at: datetime) -> None:
+    def add(
+        conn: psycopg.Connection, token_id: UUID, user_id: UUID, expires_at: datetime
+    ) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -339,7 +341,7 @@ class ResourceReservationRepository:
     @staticmethod
     def get_tenant_limits(
         conn: psycopg.Connection, tenant_id: UUID
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -349,11 +351,17 @@ class ResourceReservationRepository:
                 """,
                 (str(tenant_id),),
             )
-            return {row["resource_type"]: float(row["limit_value"]) for row in cur.fetchall()}
+            return {
+                row["resource_type"]: float(row["limit_value"])  # type: ignore[call-overload]
+                for row in cur.fetchall()
+            }
 
     @staticmethod
     def set_tenant_limit(
-        conn: psycopg.Connection, tenant_id: UUID, resource_type: str, limit_value: float
+        conn: psycopg.Connection,
+        tenant_id: UUID,
+        resource_type: str,
+        limit_value: float,
     ) -> None:
         if resource_type not in ResourceReservationRepository.RESOURCE_TYPES:
             raise ValueError(f"Invalid resource type: {resource_type}")
@@ -374,8 +382,8 @@ class ResourceReservationRepository:
         conn: psycopg.Connection,
         tenant_id: UUID,
         job_id: UUID,
-        resources: Dict[str, float],
-    ) -> List[UUID]:
+        resources: dict[str, float],
+    ) -> list[UUID]:
         """Atomically reserve resources. Raises ResourceExhaustedError if insufficient."""
         reservation_ids = []
         for resource_type, amount in resources.items():
@@ -396,7 +404,7 @@ class ResourceReservationRepository:
                     raise ResourceExhaustedError(
                         f"No limit configured for {resource_type}"
                     )
-                limit_value = float(limit_row["limit_value"])
+                limit_value = float(limit_row["limit_value"])  # type: ignore[call-overload]
 
                 # Check current reservations
                 cur.execute(
@@ -409,7 +417,7 @@ class ResourceReservationRepository:
                     (str(tenant_id), resource_type),
                 )
                 used_row = cur.fetchone()
-                used = float(used_row["used"]) if used_row else 0.0
+                used = float(used_row["used"]) if used_row else 0.0  # type: ignore[call-overload]
 
                 if used + amount > limit_value + 1e-9:
                     raise ResourceExhaustedError(
@@ -444,7 +452,7 @@ class ResourceReservationRepository:
 
     @staticmethod
     def release(
-        conn: psycopg.Connection, job_id: UUID, resource_type: Optional[str] = None
+        conn: psycopg.Connection, job_id: UUID, resource_type: str | None = None
     ) -> None:
         with conn.cursor() as cur:
             if resource_type:
@@ -468,9 +476,7 @@ class ResourceReservationRepository:
                 )
 
     @staticmethod
-    def get_job_reservations(
-        conn: psycopg.Connection, job_id: UUID
-    ) -> List[Dict]:
+    def get_job_reservations(conn: psycopg.Connection, job_id: UUID) -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -480,7 +486,7 @@ class ResourceReservationRepository:
                 """,
                 (str(job_id),),
             )
-            return cur.fetchall()
+            return cur.fetchall()  # type: ignore[return-value]
 
 
 class RecoveryJobRepository:
@@ -491,7 +497,7 @@ class RecoveryJobRepository:
         conn: psycopg.Connection,
         tenant_id: UUID,
         requested_by: UUID,
-        request_payload: Dict,
+        request_payload: dict,
         correlation_id: UUID,
     ) -> UUID:
         job_id = uuid4()
@@ -502,7 +508,13 @@ class RecoveryJobRepository:
                 (job_id, tenant_id, requested_by, request_payload, correlation_id)
                 VALUES (%s, %s, %s, %s, %s)
                 """,
-                (str(job_id), str(tenant_id), str(requested_by), request_payload, str(correlation_id)),
+                (
+                    str(job_id),
+                    str(tenant_id),
+                    str(requested_by),
+                    request_payload,
+                    str(correlation_id),
+                ),
             )
         return job_id
 
@@ -512,7 +524,7 @@ class RecoveryJobRepository:
         job_id: UUID,
         status: str,
         progress: int = 0,
-        error_code: Optional[str] = None,
+        error_code: str | None = None,
     ) -> None:
         with conn.cursor() as cur:
             cur.execute(
@@ -525,18 +537,18 @@ class RecoveryJobRepository:
             )
 
     @staticmethod
-    def get(conn: psycopg.Connection, job_id: UUID) -> Optional[Dict]:
+    def get(conn: psycopg.Connection, job_id: UUID) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 f'SELECT * FROM "{SCHEMA}".recovery_jobs WHERE job_id = %s',
                 (str(job_id),),
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
     def list_for_tenant(
-        conn: psycopg.Connection, tenant_id: UUID, status: Optional[str] = None
-    ) -> List[Dict]:
+        conn: psycopg.Connection, tenant_id: UUID, status: str | None = None
+    ) -> list[dict]:
         with conn.cursor() as cur:
             if status:
                 cur.execute(
@@ -556,7 +568,7 @@ class RecoveryJobRepository:
                     """,
                     (str(tenant_id),),
                 )
-            return cur.fetchall()
+            return cur.fetchall()  # type: ignore[return-value]
 
 
 class ProviderEventRepository:
@@ -569,7 +581,7 @@ class ProviderEventRepository:
         provider: str,
         external_event_id: str,
         event_type: str,
-        payload: Dict,
+        payload: dict,
     ) -> UUID:
         event_id = uuid4()
         with conn.cursor() as cur:
@@ -580,7 +592,14 @@ class ProviderEventRepository:
                     (provider_event_id, tenant_id, provider, external_event_id, event_type, payload)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (str(event_id), str(tenant_id), provider, external_event_id, event_type, payload),
+                    (
+                        str(event_id),
+                        str(tenant_id),
+                        provider,
+                        external_event_id,
+                        event_type,
+                        payload,
+                    ),
                 )
             except psycopg.errors.UniqueViolation:
                 # Already processed - fetch existing
@@ -593,14 +612,12 @@ class ProviderEventRepository:
                 )
                 row = cur.fetchone()
                 if row:
-                    return UUID(row["provider_event_id"])
+                    return UUID(row["provider_event_id"])  # type: ignore[call-overload]
                 raise
         return event_id
 
     @staticmethod
-    def mark_processed(
-        conn: psycopg.Connection, event_id: UUID
-    ) -> None:
+    def mark_processed(conn: psycopg.Connection, event_id: UUID) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -615,7 +632,7 @@ class ProviderEventRepository:
 class ProductionExecutionRepository:
     """Production execution with idempotency and state machine."""
 
-    VALID_STATES = (
+    VALID_STATES: ClassVar[tuple[str, ...]] = (
         "PLANNED",
         "AUTHORIZED",
         "EXECUTING",
@@ -625,7 +642,7 @@ class ProductionExecutionRepository:
         "CANCELLED",
     )
 
-    ALLOWED_TRANSITIONS = {
+    ALLOWED_TRANSITIONS: ClassVar[dict[str, set[str]]] = {
         "PLANNED": {"AUTHORIZED", "BLOCKED", "CANCELLED"},
         "AUTHORIZED": {"EXECUTING", "BLOCKED", "CANCELLED"},
         "EXECUTING": {"SUCCEEDED", "FAILED", "BLOCKED"},
@@ -694,8 +711,8 @@ class ProductionExecutionRepository:
         conn: psycopg.Connection,
         execution_id: UUID,
         target_state: str,
-        provider_reference: Optional[str] = None,
-    ) -> Dict:
+        provider_reference: str | None = None,
+    ) -> dict:
         """Atomically transition state with validation. Returns updated row."""
         if target_state not in ProductionExecutionRepository.VALID_STATES:
             raise ValueError(f"Invalid state: {target_state}")
@@ -713,19 +730,26 @@ class ProductionExecutionRepository:
             if not row:
                 raise DatabaseError(f"Execution not found: {execution_id}")
 
-            current_state = row["state"]
-            if target_state not in ProductionExecutionRepository.ALLOWED_TRANSITIONS.get(current_state, set()):
-                raise DatabaseError(f"Invalid transition: {current_state} -> {target_state}")
+            current_state = row["state"]  # type: ignore[call-overload]
+            if (
+                target_state
+                not in ProductionExecutionRepository.ALLOWED_TRANSITIONS.get(
+                    current_state, set()
+                )
+            ):
+                raise DatabaseError(
+                    f"Invalid transition: {current_state} -> {target_state}"
+                )
 
             # Validate preconditions for EXECUTING
             if target_state == "EXECUTING":
-                if row["decision_expires_at"] <= datetime.now(timezone.utc):
+                if row["decision_expires_at"] <= datetime.now(timezone.utc):  # type: ignore[call-overload]
                     raise DatabaseError("Decision expired")
-                if not row["policy_allowed"]:
+                if not row["policy_allowed"]:  # type: ignore[call-overload]
                     raise DatabaseError("Policy not allowed")
-                if not row["authorized"]:
+                if not row["authorized"]:  # type: ignore[call-overload]
                     raise DatabaseError("Not authorized")
-                if not row["resources_reserved"]:
+                if not row["resources_reserved"]:  # type: ignore[call-overload]
                     raise DatabaseError("Resources not reserved")
 
             updates = ["state = %s", "updated_at = now()"]
@@ -748,21 +772,21 @@ class ProductionExecutionRepository:
                 """,
                 params,
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
-    def get(conn: psycopg.Connection, execution_id: UUID) -> Optional[Dict]:
+    def get(conn: psycopg.Connection, execution_id: UUID) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 f'SELECT * FROM "{SCHEMA}".production_executions WHERE execution_id = %s',
                 (str(execution_id),),
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
     def get_by_idempotency(
         conn: psycopg.Connection, tenant_id: UUID, idempotency_key: str
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -771,7 +795,7 @@ class ProductionExecutionRepository:
                 """,
                 (str(tenant_id), idempotency_key),
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
 
 class ModelRegistryRepository:
@@ -784,8 +808,8 @@ class ModelRegistryRepository:
         artifact_sha256: str,
         feature_schema_version: str,
         preprocessing_version: str,
-        calibration_metadata: Dict,
-        training_metadata: Dict,
+        calibration_metadata: dict,
+        training_metadata: dict,
     ) -> None:
         with conn.cursor() as cur:
             cur.execute(
@@ -812,16 +836,18 @@ class ModelRegistryRepository:
             )
 
     @staticmethod
-    def get(conn: psycopg.Connection, model_version: str) -> Optional[Dict]:
+    def get(conn: psycopg.Connection, model_version: str) -> dict | None:
         with conn.cursor() as cur:
             cur.execute(
                 f'SELECT * FROM "{SCHEMA}".model_registry WHERE model_version = %s',
                 (model_version,),
             )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
-    def validate_artifact(conn: psycopg.Connection, model_version: str, sha256: str) -> bool:
+    def validate_artifact(
+        conn: psycopg.Connection, model_version: str, sha256: str
+    ) -> bool:
         row = ModelRegistryRepository.get(conn, model_version)
         return row is not None and row["artifact_sha256"] == sha256
 
@@ -836,10 +862,10 @@ class AuditRepository:
         run_id: str,
         component: str,
         event_type: str,
-        entity_id: Optional[str],
-        event_metadata: Dict,
-        correlation_id: Optional[UUID] = None,
-        actor_user_id: Optional[UUID] = None,
+        entity_id: str | None,
+        event_metadata: dict,
+        correlation_id: UUID | None = None,
+        actor_user_id: UUID | None = None,
     ) -> UUID:
         audit_id = uuid4()
         with conn.cursor() as cur:
@@ -866,8 +892,8 @@ class AuditRepository:
 
     @staticmethod
     def get_for_run(
-        conn: psycopg.Connection, run_id: str, tenant_id: Optional[UUID] = None
-    ) -> List[Dict]:
+        conn: psycopg.Connection, run_id: str, tenant_id: UUID | None = None
+    ) -> list[dict]:
         with conn.cursor() as cur:
             if tenant_id:
                 cur.execute(
@@ -887,7 +913,7 @@ class AuditRepository:
                     """,
                     (run_id,),
                 )
-            return cur.fetchall()
+            return cur.fetchall()  # type: ignore[return-value]
 
 
 class RecoveryRunRepository:
@@ -902,8 +928,8 @@ class RecoveryRunRepository:
         idempotency_key: str,
         batch_seed: int,
         model_identifier: str,
-        resource_limits: Dict,
-        strategies: List[str],
+        resource_limits: dict,
+        strategies: list[str],
         simulation: bool = True,
     ) -> str:
         run_id = f"run_{uuid4().hex[:12]}"
@@ -939,8 +965,8 @@ class RecoveryRunRepository:
         conn: psycopg.Connection,
         run_id: str,
         status: str,
-        error: Optional[str] = None,
-        result_payload: Optional[Dict] = None,
+        error: str | None = None,
+        result_payload: dict | None = None,
     ) -> None:
         with conn.cursor() as cur:
             if result_payload:
@@ -963,7 +989,9 @@ class RecoveryRunRepository:
                 )
 
     @staticmethod
-    def get(conn: psycopg.Connection, run_id: str, tenant_id: Optional[UUID] = None) -> Optional[Dict]:
+    def get(
+        conn: psycopg.Connection, run_id: str, tenant_id: UUID | None = None
+    ) -> dict | None:
         with conn.cursor() as cur:
             if tenant_id:
                 cur.execute(
@@ -975,12 +1003,12 @@ class RecoveryRunRepository:
                     f'SELECT * FROM "{SCHEMA}".recovery_runs WHERE run_id = %s',
                     (run_id,),
                 )
-            return cur.fetchone()
+            return cur.fetchone()  # type: ignore[return-value]
 
     @staticmethod
     def list_for_tenant(
         conn: psycopg.Connection, tenant_id: UUID, limit: int = 50, offset: int = 0
-    ) -> List[Dict]:
+    ) -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -991,29 +1019,29 @@ class RecoveryRunRepository:
                 """,
                 (str(tenant_id), limit, offset),
             )
-            return cur.fetchall()
+            return cur.fetchall()  # type: ignore[return-value]
 
 
 __all__ = [
+    "AuditRepository",
     "DatabaseError",
-    "MigrationError",
-    "ResourceExhaustedError",
     "IdempotencyConflictError",
-    "TenantNotFoundError",
+    "MigrationError",
+    "ModelRegistryRepository",
     "OptimisticLockError",
-    "get_pool",
-    "close_pool",
-    "connection",
-    "transaction",
-    "run_migrations",
+    "ProductionExecutionRepository",
+    "ProviderEventRepository",
+    "RecoveryJobRepository",
+    "RecoveryRunRepository",
+    "ResourceExhaustedError",
+    "ResourceReservationRepository",
+    "RevokedTokenRepository",
+    "TenantNotFoundError",
     "TenantRepository",
     "UserRepository",
-    "RevokedTokenRepository",
-    "ResourceReservationRepository",
-    "RecoveryJobRepository",
-    "ProviderEventRepository",
-    "ProductionExecutionRepository",
-    "ModelRegistryRepository",
-    "AuditRepository",
-    "RecoveryRunRepository",
+    "close_pool",
+    "connection",
+    "get_pool",
+    "run_migrations",
+    "transaction",
 ]

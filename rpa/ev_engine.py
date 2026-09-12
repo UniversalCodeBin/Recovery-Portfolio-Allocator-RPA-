@@ -16,10 +16,10 @@ The formula is configurable through :class:`rpa.config.EVEngineConfig`. Every
 component (gross, recoverable, each cost line, net) is returned so it can be
 reported and audited — nothing is hidden.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -47,7 +47,7 @@ class EVRow:
     net_expected: float
     is_no_op: bool = False
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "transaction_id": self.transaction_id,
             "action_id": self.action_id,
@@ -67,12 +67,12 @@ class EVRow:
 class EVTable:
     """Full EV table for a batch (deterministic)."""
 
-    rows: List[EVRow]
-    actions: List[ActionSpec]
+    rows: list[EVRow]
+    actions: list[ActionSpec]
     config: EVEngineConfig
 
-    n_transactions: Optional[int] = None
-    n_actions: Optional[int] = None
+    n_transactions: int | None = None
+    n_actions: int | None = None
 
     def __post_init__(self) -> None:
         if self.n_transactions is None or self.n_actions is None:
@@ -92,13 +92,15 @@ class EVTable:
     @property
     def net_ev_matrix(self) -> np.ndarray:
         return np.array([r.net_expected for r in self.rows]).reshape(
-            self.n_transactions, self.n_actions
+            self.n_transactions,  # type: ignore[arg-type]
+            self.n_actions,  # type: ignore[arg-type]
         )
 
     @property
     def probability_matrix(self) -> np.ndarray:
         return np.array([r.p_recovery for r in self.rows]).reshape(
-            self.n_transactions, self.n_actions
+            self.n_transactions,  # type: ignore[arg-type]
+            self.n_actions,  # type: ignore[arg-type]
         )
 
     def to_frame(self) -> pd.DataFrame:
@@ -108,7 +110,7 @@ class EVTable:
 class EVEngine:
     """Deterministic expected-value calculator."""
 
-    def __init__(self, config: EVEngineConfig = EVEngineConfig()) -> None:
+    def __init__(self, config: EVEngineConfig = EVEngineConfig()) -> None:  # noqa: B008
         self.config = config
 
     def _recoverable_amount(self, amount: float) -> float:
@@ -153,7 +155,7 @@ class EVEngine:
         self,
         transactions: pd.DataFrame,
         probabilities: np.ndarray,
-        actions: List[ActionSpec],
+        actions: list[ActionSpec],
     ) -> EVTable:
         """Compute EV for a full batch.
 
@@ -167,14 +169,19 @@ class EVEngine:
             )
         txn_ids = transactions["transaction_id"].tolist()
         amounts = transactions["amount"].astype(float).tolist()
-        rows: List[EVRow] = []
+        rows: list[EVRow] = []
         for i, txn_id in enumerate(txn_ids):
             for j, action in enumerate(actions):
-                rows.append(self.compute_row(
-                    txn_id, amounts[i], action, probabilities[i, j]
-                ))
-        return EVTable(rows=rows, actions=actions, config=self.config,
-                       n_transactions=len(txn_ids), n_actions=len(actions))
+                rows.append(
+                    self.compute_row(txn_id, amounts[i], action, probabilities[i, j])
+                )
+        return EVTable(
+            rows=rows,
+            actions=actions,
+            config=self.config,
+            n_transactions=len(txn_ids),
+            n_actions=len(actions),
+        )
 
 
-__all__ = ["EVEngine", "EVTable", "EVRow", "EVEngineConfig"]
+__all__ = ["EVEngine", "EVEngineConfig", "EVRow", "EVTable"]

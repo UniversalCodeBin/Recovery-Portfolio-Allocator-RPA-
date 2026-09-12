@@ -9,10 +9,10 @@ Validates that the per-group feature builders:
 These tests do NOT train a model; the leakage / model / prediction tests live
 in their respective files.
 """
+
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from data_core.generator import SyntheticDataGenerator
@@ -49,23 +49,56 @@ def actions(frames):
 # 1. Expected columns
 # ---------------------------------------------------------------------------
 EXPECTED_NUMERIC = {
-    "transaction": ["amount", "log_amount", "retry_count", "days_overdue",
-                    "is_pending", "is_charged_back", "amount_over_ltv"],
-    "customer": ["customer_ltv", "log_customer_ltv", "historical_success_rate",
-                 "historical_recovery_rate", "customer_behavior_score",
-                 "customer_tenure_days", "log_customer_tenure",
-                 "is_business_segment", "is_enterprise_segment"],
-    "temporal": ["day_of_week", "hour_of_day", "is_weekend", "is_morning",
-                 "is_afternoon", "is_evening", "is_night",
-                 "txn_age_days", "due_in_future"],
+    "transaction": [
+        "amount",
+        "log_amount",
+        "retry_count",
+        "days_overdue",
+        "is_pending",
+        "is_charged_back",
+        "amount_over_ltv",
+    ],
+    "customer": [
+        "customer_ltv",
+        "log_customer_ltv",
+        "historical_success_rate",
+        "historical_recovery_rate",
+        "customer_behavior_score",
+        "customer_tenure_days",
+        "log_customer_tenure",
+        "is_business_segment",
+        "is_enterprise_segment",
+    ],
+    "temporal": [
+        "day_of_week",
+        "hour_of_day",
+        "is_weekend",
+        "is_morning",
+        "is_afternoon",
+        "is_evening",
+        "is_night",
+        "txn_age_days",
+        "due_in_future",
+    ],
     "payment": ["is_retry_exhausted", "is_long_overdue"],
-    "action": ["action_cost", "action_resource_count", "uses_retry",
-               "uses_messaging", "uses_incentive", "uses_human", "is_no_op"],
-    "interaction": ["retry_count_x_action", "days_overdue_x_action",
-                    "ltv_x_action", "recovery_rate_x_action",
-                    "behavior_x_action",
-                    "failure_insufficient_x_retry_action",
-                    "payment_upi_x_messaging"],
+    "action": [
+        "action_cost",
+        "action_resource_count",
+        "uses_retry",
+        "uses_messaging",
+        "uses_incentive",
+        "uses_human",
+        "is_no_op",
+    ],
+    "interaction": [
+        "retry_count_x_action",
+        "days_overdue_x_action",
+        "ltv_x_action",
+        "recovery_rate_x_action",
+        "behavior_x_action",
+        "failure_insufficient_x_retry_action",
+        "payment_upi_x_messaging",
+    ],
 }
 
 
@@ -86,8 +119,12 @@ def test_customer_columns(frames):
     for col in EXPECTED_NUMERIC["customer"]:
         assert col in df.columns, f"missing customer column {col}"
     assert (df["customer_ltv"] > 0).all()
-    assert (df["historical_success_rate"] >= 0).all() and (df["historical_success_rate"] <= 1).all()
-    assert (df["historical_recovery_rate"] >= 0).all() and (df["historical_recovery_rate"] <= 1).all()
+    assert (df["historical_success_rate"] >= 0).all() and (
+        df["historical_success_rate"] <= 1
+    ).all()
+    assert (df["historical_recovery_rate"] >= 0).all() and (
+        df["historical_recovery_rate"] <= 1
+    ).all()
     assert df["is_business_segment"].isin([0, 1]).all()
     assert df["is_enterprise_segment"].isin([0, 1]).all()
 
@@ -121,7 +158,12 @@ def test_action_columns(frames):
     assert "action_type" in df.columns
     assert (df["action_cost"] >= 0).all()
     assert df["is_no_op"].isin([0, 1]).all()
-    assert (df["uses_retry"] | df["uses_messaging"] | df["uses_incentive"] | df["uses_human"]).sum() >= 0
+    assert (
+        df["uses_retry"]
+        | df["uses_messaging"]
+        | df["uses_incentive"]
+        | df["uses_human"]
+    ).sum() >= 0
 
 
 # ---------------------------------------------------------------------------
@@ -130,10 +172,15 @@ def test_action_columns(frames):
 def test_no_unexpected_nans(frames):
     spec = resolve_feature_spec(FeatureFlags())
     df = build_step2_feature_frame(
-        frames["transactions"], frames["customers"], frames["recovery_actions"],
-        frames["recovery_actions"]["action_id"].tolist(), FeatureFlags(),
+        frames["transactions"],
+        frames["customers"],
+        frames["recovery_actions"],
+        frames["recovery_actions"]["action_id"].tolist(),
+        FeatureFlags(),
     )
-    feature_cols = spec.numeric_columns + spec.categorical_columns + spec.interaction_columns
+    feature_cols = (
+        spec.numeric_columns + spec.categorical_columns + spec.interaction_columns
+    )
     for col in feature_cols:
         if col in df.columns:
             n_nan = int(df[col].isna().sum())
@@ -146,12 +193,18 @@ def test_no_unexpected_nans(frames):
 def test_categorical_encoding_deterministic(frames):
     spec = resolve_feature_spec(FeatureFlags())
     a = build_step2_feature_frame(
-        frames["transactions"], frames["customers"], frames["recovery_actions"],
-        frames["recovery_actions"]["action_id"].tolist(), FeatureFlags(),
+        frames["transactions"],
+        frames["customers"],
+        frames["recovery_actions"],
+        frames["recovery_actions"]["action_id"].tolist(),
+        FeatureFlags(),
     )
     b = build_step2_feature_frame(
-        frames["transactions"], frames["customers"], frames["recovery_actions"],
-        frames["recovery_actions"]["action_id"].tolist(), FeatureFlags(),
+        frames["transactions"],
+        frames["customers"],
+        frames["recovery_actions"],
+        frames["recovery_actions"]["action_id"].tolist(),
+        FeatureFlags(),
     )
     for col in spec.categorical_columns:
         assert a[col].tolist() == b[col].tolist(), f"{col} is non-deterministic"
@@ -163,8 +216,11 @@ def test_categorical_encoding_deterministic(frames):
 def test_interactions_deterministic(frames):
     action_ids = frames["recovery_actions"]["action_id"].tolist()
     joined = build_step2_feature_frame(
-        frames["transactions"], frames["customers"], frames["recovery_actions"],
-        action_ids, FeatureFlags(),
+        frames["transactions"],
+        frames["customers"],
+        frames["recovery_actions"],
+        action_ids,
+        FeatureFlags(),
     )
     a = build_interaction_features(joined)
     b = build_interaction_features(joined)
@@ -180,12 +236,18 @@ def test_interactions_deterministic(frames):
 def test_feature_pipeline_reproducible(frames):
     action_ids = frames["recovery_actions"]["action_id"].tolist()
     a = build_step2_feature_frame(
-        frames["transactions"], frames["customers"], frames["recovery_actions"],
-        action_ids, FeatureFlags(),
+        frames["transactions"],
+        frames["customers"],
+        frames["recovery_actions"],
+        action_ids,
+        FeatureFlags(),
     )
     b = build_step2_feature_frame(
-        frames["transactions"], frames["customers"], frames["recovery_actions"],
-        action_ids, FeatureFlags(),
+        frames["transactions"],
+        frames["customers"],
+        frames["recovery_actions"],
+        action_ids,
+        FeatureFlags(),
     )
     # All numeric columns must match bit-for-bit.
     spec = resolve_feature_spec(FeatureFlags())
@@ -197,10 +259,16 @@ def test_feature_pipeline_reproducible(frames):
 # 6. Feature spec respects flags
 # ---------------------------------------------------------------------------
 def test_feature_spec_flags():
-    spec = resolve_feature_spec(FeatureFlags(
-        transaction=True, customer=False, temporal=False,
-        payment=True, action=False, interactions=False,
-    ))
+    spec = resolve_feature_spec(
+        FeatureFlags(
+            transaction=True,
+            customer=False,
+            temporal=False,
+            payment=True,
+            action=False,
+            interactions=False,
+        )
+    )
     # Transaction is on -> amount appears.
     assert "amount" in spec.numeric_columns
     # Customer is off -> customer columns absent.

@@ -8,10 +8,10 @@ from data_generation import SyntheticDataGenerator
 from metrics import (
     BatchMetrics,
     aggregate_metrics,
-    compute_batch_metrics,
     compare_lift,
+    compute_batch_metrics,
 )
-from strategies import no_intervention_strategy, rpa_strategy, ev_greedy_strategy
+from strategies import ev_greedy_strategy, no_intervention_strategy, rpa_strategy
 
 
 @pytest.fixture()
@@ -31,8 +31,13 @@ def probs(batch):
 
 def make_alloc(batch, probs, strategy="no_intervention"):
     from actions import Resource
-    cap = {Resource.INCENTIVE_BUDGET: 1e9, Resource.HUMAN_SLOTS: 1e9,
-           Resource.MESSAGING: 1e9, Resource.RETRY: 1e9}
+
+    cap = {
+        Resource.INCENTIVE_BUDGET: 1e9,
+        Resource.HUMAN_SLOTS: 1e9,
+        Resource.MESSAGING: 1e9,
+        Resource.RETRY: 1e9,
+    }
     if strategy == "no_intervention":
         return no_intervention_strategy(batch, probs, cap)
     if strategy == "rpa":

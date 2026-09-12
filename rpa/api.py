@@ -15,6 +15,7 @@ Endpoints:
 All execution endpoints return SIMULATION results. Nothing in this API can
 move real money.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,9 +24,8 @@ import os
 import time
 import uuid
 from math import isfinite
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any
 
-import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -41,15 +41,12 @@ from rpa.config import (
     default_resource_limits,
 )
 from rpa.loading import (
-    ActionSpec,
     load_actions,
     load_customers,
     load_transactions,
-    predictions_matrix,
 )
 from rpa.orchestrator import (
     RPABatchOrchestrator,
-    BatchResult,
     load_batch_result,
 )
 from rpa.prediction_service import PredictionService
@@ -70,6 +67,7 @@ app = FastAPI(
 
 # Mount production v1 router
 from rpa.api_v1 import router as v1_router
+
 app.include_router(v1_router)
 
 # ---------------------------------------------------------------------------
@@ -85,8 +83,10 @@ default_origins = [
 ]
 try:
     settings = get_settings()
-    allowed_origins = list(settings.cors_origins) if settings.cors_origins else default_origins
-except Exception:
+    allowed_origins = (
+        list(settings.cors_origins) if settings.cors_origins else default_origins
+    )
+except Exception:  # noqa: BLE001
     env_origins = os.getenv("CORS_ORIGINS")
     allowed_origins = (
         [o.strip() for o in env_origins.split(",") if o.strip()]
@@ -131,7 +131,9 @@ async def add_request_id_middleware(request: Request, call_next):
 # Global exception handlers
 # ---------------------------------------------------------------------------
 class APIError(Exception):
-    def __init__(self, code: str, message: str, status_code: int = 400, field: str | None = None):
+    def __init__(
+        self, code: str, message: str, status_code: int = 400, field: str | None = None
+    ):
         self.code = code
         self.message = message
         self.status_code = status_code
@@ -201,7 +203,9 @@ class _ValidatedRequest(BaseModel):
             raise ValueError(f"unknown resource limit(s): {sorted(unknown)}")
         for key, value in limits.items():
             if value is not None and (not isfinite(value) or value < 0):
-                raise ValueError(f"resource limit {key} must be a finite non-negative number or null")
+                raise ValueError(
+                    f"resource limit {key} must be a finite non-negative number or null"
+                )
         return limits
 
     @field_validator("transaction_ids", check_fields=False)
@@ -209,7 +213,9 @@ class _ValidatedRequest(BaseModel):
     def validate_transaction_ids(cls, ids):
         if ids is None:
             return ids
-        if not ids or any(not isinstance(value, str) or not value.strip() for value in ids):
+        if not ids or any(
+            not isinstance(value, str) or not value.strip() for value in ids
+        ):
             raise ValueError("transaction_ids must contain non-empty strings")
         if len(ids) != len(set(ids)):
             raise ValueError("transaction_ids must not contain duplicates")
@@ -233,36 +239,40 @@ class _ValidatedRequest(BaseModel):
 class BatchRequest(_ValidatedRequest):
     split: str = Field("demo", min_length=1)
     batch_seed: int = Field(0, ge=0, description="Random seed for outcome simulation")
-    resource_limits: Optional[Dict[str, Optional[float]]] = Field(
-        None, description="Shared resource caps; defaults to Step 1 values")
-    strategies: Optional[List[str]] = Field(
-        None, description="Strategies to run (default all except rule_based)")
-    transaction_ids: Optional[List[str]] = Field(None)
+    resource_limits: dict[str, float | None] | None = Field(
+        None, description="Shared resource caps; defaults to Step 1 values"
+    )
+    strategies: list[str] | None = Field(
+        None, description="Strategies to run (default all except rule_based)"
+    )
+    transaction_ids: list[str] | None = Field(None)
 
 
 class PreviewRequest(_ValidatedRequest):
     split: str = Field("demo", min_length=1)
-    transaction_ids: Optional[List[str]] = None
+    transaction_ids: list[str] | None = None
 
 
 class StrategyRequest(_ValidatedRequest):
     split: str = Field("demo", min_length=1)
-    strategy: str = Field("rpa_optimizer", description="no_action|rule_based|ev_greedy|rpa_optimizer")
+    strategy: str = Field(
+        "rpa_optimizer", description="no_action|rule_based|ev_greedy|rpa_optimizer"
+    )
     batch_seed: int = Field(0, ge=0)
-    resource_limits: Optional[Dict[str, Optional[float]]] = None
+    resource_limits: dict[str, float | None] | None = None
 
 
 class ExecuteRequest(_ValidatedRequest):
     split: str = Field("demo", min_length=1)
     strategy: str = "rpa_optimizer"
     batch_seed: int = Field(0, ge=0)
-    resource_limits: Optional[Dict[str, Optional[float]]] = None
+    resource_limits: dict[str, float | None] | None = None
 
 
 # ---------------------------------------------------------------------------
 # App state (module-level singletons; tests can override)
 # ---------------------------------------------------------------------------
-def _load_context(split: str = "demo", transaction_ids: Optional[List[str]] = None):
+def _load_context(split: str = "demo", transaction_ids: list[str] | None = None):
     transactions = load_transactions(split)
     customers = load_customers()
     actions = load_actions()
@@ -270,8 +280,13 @@ def _load_context(split: str = "demo", transaction_ids: Optional[List[str]] = No
         known_ids = set(transactions["transaction_id"])
         unknown_ids = sorted(set(transaction_ids) - known_ids)
         if unknown_ids:
-            raise HTTPException(status_code=404, detail=f"transaction(s) not found in split {split}: {unknown_ids}")
-        transactions = transactions[transactions["transaction_id"].isin(transaction_ids)]
+            raise HTTPException(
+                status_code=404,
+                detail=f"transaction(s) not found in split {split}: {unknown_ids}",
+            )
+        transactions = transactions[
+            transactions["transaction_id"].isin(transaction_ids)
+        ]
     return transactions, customers, actions
 
 
@@ -279,7 +294,7 @@ def _load_context(split: str = "demo", transaction_ids: Optional[List[str]] = No
 # Health & metadata
 # ---------------------------------------------------------------------------
 @app.get("/health")
-def health() -> Dict:
+def health() -> dict:
     settings = get_settings()
     return {
         "status": "ok",
@@ -292,7 +307,7 @@ def health() -> Dict:
 
 
 @app.get("/model/metadata")
-def model_metadata() -> Dict:
+def model_metadata() -> dict:
     service = PredictionService()
     meta = service.metadata
     return {
@@ -301,21 +316,23 @@ def model_metadata() -> Dict:
         "chosen_calibration": meta["chosen_calibration"],
         "feature_spec": meta["feature_spec"],
         "feature_count": len(meta["feature_names"]),
-        "precomputed_predictions_available": _predictions_available(meta["model_identifier"]),
+        "precomputed_predictions_available": _predictions_available(
+            meta["model_identifier"]
+        ),
     }
 
 
 def _predictions_available(model_id: str) -> bool:
-    from pathlib import Path
     from rpa.config import PREDICTIONS_DIR
+
     return any(PREDICTIONS_DIR.glob(f"predictions_*_{model_id}.csv"))
 
 
 # ---------------------------------------------------------------------------
 # Recovery endpoints
 # ---------------------------------------------------------------------------
-@app.post("/recovery/batch", response_model=Dict)
-def run_batch(req: BatchRequest) -> Dict:
+@app.post("/recovery/batch", response_model=dict)
+def run_batch(req: BatchRequest) -> dict:
     try:
         transactions, customers, actions = _load_context(req.split, req.transaction_ids)
         limits = req.resource_limits or default_resource_limits()
@@ -335,12 +352,12 @@ def run_batch(req: BatchRequest) -> Dict:
         raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"batch failed: {exc}")
 
 
 @app.post("/recovery/preview")
-def preview(req: PreviewRequest) -> Dict:
+def preview(req: PreviewRequest) -> dict:
     """Preview candidate actions (predictions + EV + policy screen) for a batch."""
     try:
         transactions, customers, actions = _load_context(req.split, req.transaction_ids)
@@ -348,6 +365,7 @@ def preview(req: PreviewRequest) -> Dict:
         pred = service.score(transactions, customers, actions)
         from rpa.ev_engine import EVEngine
         from rpa.policy_engine import PolicyEngine
+
         ev_table = EVEngine().compute(transactions, pred.probabilities, actions)
         res_state = PolicyEngine().initial_resource_state(default_resource_limits())
         verdicts = PolicyEngine().screen(ev_table, transactions, res_state)
@@ -362,14 +380,16 @@ def preview(req: PreviewRequest) -> Dict:
         raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"preview failed: {exc}")
 
 
 @app.post("/recovery/strategy/{strategy_name}")
-def run_strategy(strategy_name: str, req: StrategyRequest) -> Dict:
+def run_strategy(strategy_name: str, req: StrategyRequest) -> dict:
     if strategy_name not in STRATEGY_NAMES:
-        raise HTTPException(status_code=400, detail=f"unknown strategy: {strategy_name}")
+        raise HTTPException(
+            status_code=400, detail=f"unknown strategy: {strategy_name}"
+        )
     try:
         transactions, customers, actions = _load_context(req.split)
         limits = req.resource_limits or default_resource_limits()
@@ -391,7 +411,9 @@ def run_strategy(strategy_name: str, req: StrategyRequest) -> Dict:
             "strategy": strategy_name,
             "plan": plan.to_records(),
             "metrics": metrics,
-            "execution": result.executions[strategy_name].to_frame().to_dict(orient="records"),
+            "execution": result.executions[strategy_name]
+            .to_frame()
+            .to_dict(orient="records"),
             "verification": result.verifications[strategy_name].batch_metrics,
             "simulation": True,
         }
@@ -399,12 +421,12 @@ def run_strategy(strategy_name: str, req: StrategyRequest) -> Dict:
         raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"strategy failed: {exc}")
 
 
 @app.post("/recovery/compare")
-def compare(req: BatchRequest) -> Dict:
+def compare(req: BatchRequest) -> dict:
     """Run all strategies on identical inputs and return a fair comparison."""
     try:
         transactions, customers, actions = _load_context(req.split, req.transaction_ids)
@@ -430,12 +452,12 @@ def compare(req: BatchRequest) -> Dict:
         raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"compare failed: {exc}")
 
 
 @app.post("/recovery/execute")
-def execute(req: ExecuteRequest) -> Dict:
+def execute(req: ExecuteRequest) -> dict:
     """Execute an approved plan under simulation. SIMULATION ONLY."""
     if req.strategy not in STRATEGY_NAMES:
         raise HTTPException(status_code=400, detail=f"unknown strategy: {req.strategy}")
@@ -471,7 +493,7 @@ def execute(req: ExecuteRequest) -> Dict:
         raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"execute failed: {exc}")
 
 
@@ -479,12 +501,12 @@ def execute(req: ExecuteRequest) -> Dict:
 # Read endpoints
 # ---------------------------------------------------------------------------
 @app.get("/recovery/plan/{batch_id}")
-def get_plan(batch_id: str) -> Dict:
+def get_plan(batch_id: str) -> dict:
     return _load_ok(batch_id, lambda d: d.get("plans", {}))
 
 
 @app.get("/recovery/metrics/{batch_id}")
-def get_metrics(batch_id: str) -> Dict:
+def get_metrics(batch_id: str) -> dict:
     try:
         data = load_batch_result(batch_id)
     except FileNotFoundError as exc:
@@ -500,6 +522,7 @@ def get_metrics(batch_id: str) -> Dict:
 def get_audit(batch_id: str) -> Any:
     try:
         from rpa.orchestrator import RUNS_DIR
+
         p = RUNS_DIR / batch_id / "audit.json"
         if not p.exists():
             raise FileNotFoundError(batch_id)
@@ -508,7 +531,7 @@ def get_audit(batch_id: str) -> Any:
         raise HTTPException(status_code=404, detail=f"audit not found: {exc}")
 
 
-def _load_ok(batch_id: str, selector) -> Dict:
+def _load_ok(batch_id: str, selector) -> dict:
     try:
         data = load_batch_result(batch_id)
     except FileNotFoundError as exc:
@@ -524,7 +547,7 @@ def _load_ok(batch_id: str, selector) -> Dict:
 # Version info endpoint
 # ---------------------------------------------------------------------------
 @app.get("/versions")
-def versions() -> Dict:
+def versions() -> dict:
     return {
         "model": DEFAULT_MODEL_IDENTIFIER,
         "policy": POLICY_VERSION,
@@ -539,25 +562,28 @@ def versions() -> Dict:
 # Frontend helper endpoints (Step 4 integration)
 # ---------------------------------------------------------------------------
 @app.get("/recovery/batch/{batch_id}")
-def get_batch(batch_id: str) -> Dict:
+def get_batch(batch_id: str) -> dict:
     """Retrieve full batch data including plans, executions, verifications, ev_table, verdicts."""
     try:
         data = load_batch_result(batch_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"batch not found: {exc}")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"failed to load batch: {exc}")
     return data
 
 
 @app.get("/recovery/batches")
-def list_batches() -> List[Dict]:
+def list_batches() -> list[dict]:
     """List available persisted recovery runs from disk for demo and history."""
     from rpa.orchestrator import RUNS_DIR
-    out = []
+
+    out: list[dict] = []
     if not RUNS_DIR.exists():
         return out
-    dirs = [p for p in RUNS_DIR.iterdir() if p.is_dir() and (p / "result.json").exists()]
+    dirs = [
+        p for p in RUNS_DIR.iterdir() if p.is_dir() and (p / "result.json").exists()
+    ]
     dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     for p in dirs:
         try:
@@ -578,22 +604,24 @@ def list_batches() -> List[Dict]:
                     "all_verified": bm.get("all_verified", False),
                 }
             txns = data.get("transaction_ids", [])
-            out.append({
-                "batch_id": batch_id,
-                "status": data.get("status", "completed"),
-                "created_at": data.get("created_at"),
-                "n_transactions": len(txns),
-                "strategies": list(data.get("plans", {}).keys()),
-                "strategy_summaries": strat_summaries,
-                "has_audit": (p / "audit.json").exists(),
-            })
-        except Exception:
+            out.append(
+                {
+                    "batch_id": batch_id,
+                    "status": data.get("status", "completed"),
+                    "created_at": data.get("created_at"),
+                    "n_transactions": len(txns),
+                    "strategies": list(data.get("plans", {}).keys()),
+                    "strategy_summaries": strat_summaries,
+                    "has_audit": (p / "audit.json").exists(),
+                }
+            )
+        except Exception:  # noqa: BLE001, S112
             continue
     return out
 
 
 @app.get("/recovery/actions")
-def get_actions() -> Dict:
+def get_actions() -> dict:
     """Return available candidate actions, default resource limits, and splits."""
     actions = load_actions()
     return {
@@ -617,28 +645,33 @@ def get_explanation(
     batch_id: str,
     transaction_id: str,
     strategy: str = "rpa_optimizer",
-) -> Dict:
+) -> dict:
     """Return step-by-step decision explanation for a transaction from batch audit."""
     if strategy not in STRATEGY_NAMES:
         raise HTTPException(status_code=400, detail=f"unknown strategy: {strategy}")
-    from rpa.audit import AuditTrail, AuditEvent
+    from rpa.audit import AuditEvent, AuditTrail
     from rpa.orchestrator import RUNS_DIR
+
     audit_file = RUNS_DIR / batch_id / "audit.json"
     if not audit_file.exists():
-        raise HTTPException(status_code=404, detail=f"audit not found for batch {batch_id}")
+        raise HTTPException(
+            status_code=404, detail=f"audit not found for batch {batch_id}"
+        )
     try:
         raw_events = json.loads(audit_file.read_text(encoding="utf-8"))
         trail = AuditTrail(batch_id)
         for e in raw_events:
-            trail.events.append(AuditEvent(
-                audit_id=e["audit_id"],
-                batch_id=e["batch_id"],
-                component=e["component"],
-                event_type=e["event_type"],
-                entity_id=e.get("entity_id", ""),
-                event_metadata=e.get("event_metadata", {}),
-                timestamp=e.get("timestamp", "")
-            ))
+            trail.events.append(
+                AuditEvent(
+                    audit_id=e["audit_id"],
+                    batch_id=e["batch_id"],
+                    component=e["component"],
+                    event_type=e["event_type"],
+                    entity_id=e.get("entity_id", ""),
+                    event_metadata=e.get("event_metadata", {}),
+                    timestamp=e.get("timestamp", ""),
+                )
+            )
         exp = trail.explain_selection(transaction_id, strategy=strategy)
         if exp.get("decision") is None and exp.get("prediction") is None:
             result_file = RUNS_DIR / batch_id / "result.json"
@@ -652,15 +685,17 @@ def get_explanation(
         return exp
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"failed to explain transaction: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"failed to explain transaction: {exc}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Production auth endpoints (only available in production mode)
 # ---------------------------------------------------------------------------
 @app.post("/auth/token")
-async def login_token(req: Dict[str, str]) -> Dict:
+async def login_token(req: dict[str, str]) -> dict:
     """Issue an access token. In demo mode, returns a synthetic token."""
     settings = get_settings()
     if settings.mode == "demo":
@@ -669,7 +704,10 @@ async def login_token(req: Dict[str, str]) -> Dict:
             "token_type": "Bearer",
             "expires_in": settings.access_token_ttl_seconds,
         }
-    raise HTTPException(status_code=501, detail="Production login requires database. Use /v1/auth/token.")
+    raise HTTPException(
+        status_code=501,
+        detail="Production login requires database. Use /v1/auth/token.",
+    )
 
 
 __all__ = ["app"]

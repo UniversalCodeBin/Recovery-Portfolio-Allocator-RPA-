@@ -31,17 +31,15 @@ def test_experiment_reproducible_same_seed_different_instances():
 
 def test_experiment_variable_across_seeds():
     a = _run_scenario("B", 56, 2)
-    b = _run_scenario("B", 57, 2)
+    _run_scenario("B", 57, 2)
     # Different master seed --> different batches, but everything stays valid.
     assert a[0]["rpa"]["actual"] + a[0]["ev_greedy"]["actual"] > 0
 
 
 def test_model_predictions_frozen_across_strategies():
     """Verify all strategies consumed byte-identical frozen probabilities."""
-    from actions import Resource
     from config import Action
-    from strategies import run_all_strategies
-    from data_generation import SyntheticDataGenerator, sample_batch, build_demo_pool
+    from data_generation import sample_batch
 
     exp = Experiment(scenarios=["A"], n_seeds=1)
     exp.prepare_data_and_model()
@@ -66,6 +64,7 @@ def test_no_binding_constraints_matches_unconstrained():
         Resource.RETRY: 10_000,
     }
     from data_generation import sample_batch
+
     for s in range(3):
         batch = sample_batch(exp.demo_pool, 120, s)
         probs = exp._model.predict_proba(batch)

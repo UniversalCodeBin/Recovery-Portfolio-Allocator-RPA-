@@ -23,13 +23,12 @@ it processes transactions in descending order of (best EV / resource consumed),
 committing each transaction's best affordable action under remaining capacity.
 RPA must beat this baseline to demonstrate portfolio-level value.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
 
 import numpy as np
-
 from ortools.linear_solver import pywraplp
 
 from rpa.config import OPTIMIZER_VERSION, OptimizerConfig
@@ -43,34 +42,36 @@ RESOURCE_KEYS = ["retry", "messaging", "incentive_budget", "human_slots"]
 class PortfolioPlan:
     """One allocation decision for a batch (per strategy)."""
 
-    transaction_ids: List[str]
-    actions: List[ActionSpec]                 # chosen action per transaction
-    net_ev_per_txn: List[float]
+    transaction_ids: list[str]
+    actions: list[ActionSpec]  # chosen action per transaction
+    net_ev_per_txn: list[float]
     total_net_ev: float
-    resource_used: Dict[str, float]
-    capacities: Dict[str, Optional[float]]
+    resource_used: dict[str, float]
+    capacities: dict[str, float | None]
     name: str
     version: str = OPTIMIZER_VERSION
     status: str = "ok"
-    solve_time_seconds: Optional[float] = None
-    solver_status: Optional[str] = None
+    solve_time_seconds: float | None = None
+    solver_status: str | None = None
 
-    def to_records(self) -> List[Dict]:
+    def to_records(self) -> list[dict]:
         out = []
         for i, txn in enumerate(self.transaction_ids):
-            out.append({
-                "transaction_id": txn,
-                "action_id": self.actions[i].action_id,
-                "action_type": self.actions[i].action_type,
-                "net_ev": round(self.net_ev_per_txn[i], 6),
-                "name": self.name,
-                "version": self.version,
-                "status": self.status,
-            })
+            out.append(
+                {
+                    "transaction_id": txn,
+                    "action_id": self.actions[i].action_id,
+                    "action_type": self.actions[i].action_type,
+                    "net_ev": round(self.net_ev_per_txn[i], 6),
+                    "name": self.name,
+                    "version": self.version,
+                    "status": self.status,
+                }
+            )
         return out
 
 
-def _resource_consumption(action: ActionSpec) -> Dict[str, float]:
+def _resource_consumption(action: ActionSpec) -> dict[str, float]:
     return {
         key: float(action.resource_requirements.get(key, 0.0) or 0.0)
         for key in RESOURCE_KEYS
@@ -80,12 +81,12 @@ def _resource_consumption(action: ActionSpec) -> Dict[str, float]:
 class Optimizer:
     """Exact constrained-portfolio solver via OR-Tools CBC."""
 
-    def __init__(self, config: OptimizerConfig = OptimizerConfig()) -> None:
+    def __init__(self, config: OptimizerConfig = OptimizerConfig()) -> None:  # noqa: B008
         self.config = config
         self.version = OPTIMIZER_VERSION
 
     # ------------------------------------------------------------------
-    def _find_no_op(self, actions: List[ActionSpec]) -> Optional[int]:
+    def _find_no_op(self, actions: list[ActionSpec]) -> int | None:
         for i, a in enumerate(actions):
             if a.action_id == self.config.no_op_action_id or a.is_no_op:
                 return i
@@ -94,9 +95,9 @@ class Optimizer:
     def solve(
         self,
         net_ev: np.ndarray,
-        actions: List[ActionSpec],
-        transaction_ids: List[str],
-        capacity: Dict[str, Optional[float]],
+        actions: list[ActionSpec],
+        transaction_ids: list[str],
+        capacity: dict[str, float | None],
     ) -> PortfolioPlan:
         """Solve the exact ILP (portfolio-level) with CBC."""
         n, m = net_ev.shape
@@ -107,14 +108,14 @@ class Optimizer:
 
         solver = pywraplp.Solver.CreateSolver(self.config.solver)
         if solver is None:
-            raise RuntimeError(f"CBC solver unavailable in OR-Tools build")
+            raise RuntimeError("CBC solver unavailable in OR-Tools build")
 
         # no-op fallback: ensure a zero-ish column exists for feasibility.
         no_op_idx = self._find_no_op(actions)
         if no_op_idx is None:
             raise ValueError("no no-op action provided; problem may be infeasible")
 
-        x: List[List[pywraplp.Variable]] = [
+        x: list[list[pywraplp.Variable]] = [
             [solver.BoolVar(f"x_{i}_{j}") for j in range(m)] for i in range(n)
         ]
 
@@ -145,7 +146,9 @@ class Optimizer:
         solver.SetTimeLimit(int(self.config.time_limit_seconds * 1000))
         status = solver.Solve()
         optimal = status == pywraplp.Solver.OPTIMAL
-        approved_feasible = status == pywraplp.Solver.FEASIBLE and self.config.allow_feasible_solution
+        approved_feasible = (
+            status == pywraplp.Solver.FEASIBLE and self.config.allow_feasible_solution
+        )
         if not (optimal or approved_feasible):
             return PortfolioPlan(
                 transaction_ids=transaction_ids,
@@ -169,7 +172,7 @@ class Optimizer:
                 chosen[i] = no_op_idx
 
         net_per_txn = [float(net_ev[i, chosen[i]]) for i in range(n)]
-        used: Dict[str, float] = {k: 0.0 for k in RESOURCE_KEYS}
+        used: dict[str, float] = {k: 0.0 for k in RESOURCE_KEYS}
         for i in range(n):
             cons = _resource_consumption(actions[chosen[i]])
             for k in RESOURCE_KEYS:
@@ -184,7 +187,9 @@ class Optimizer:
             capacities=dict(capacity),
             name="rpa_optimizer",
             status="optimal" if optimal else "feasible_policy_approved",
-            solve_time_seconds=float(solver.WallTime() / 1000.0) if solver.WallTime() else None,
+            solve_time_seconds=float(solver.WallTime() / 1000.0)
+            if solver.WallTime()
+            else None,
             solver_status=str(status),
         )
 
@@ -211,9 +216,9 @@ def _resource_magnitude(action: ActionSpec) -> float:
 
 def ev_per_resource_greedy(
     net_ev: np.ndarray,
-    actions: List[ActionSpec],
-    transaction_ids: List[str],
-    capacity: Dict[str, Optional[float]],
+    actions: list[ActionSpec],
+    transaction_ids: list[str],
+    capacity: dict[str, float | None],
     no_op_action_id: str = "act_no_intervention",
 ) -> PortfolioPlan:
     """Strong greedy baseline: rank txns by best (EV / resource) ratio.
@@ -222,16 +227,20 @@ def ev_per_resource_greedy(
     resource; commit the best *feasible* action under remaining capacity.
     """
     n, m = net_ev.shape
-    remaining: Dict[str, float] = {
+    remaining: dict[str, float] = {
         k: float(v) for k, v in capacity.items() if v is not None
     }
 
     def feasible(action: ActionSpec) -> bool:
         req = action.resource_requirements
         for key, units in req.items():
-            if units and units > 0 and key in remaining:
-                if units > remaining[key] + 1e-9:
-                    return False
+            if (
+                units
+                and units > 0
+                and key in remaining
+                and units > remaining[key] + 1e-9
+            ):
+                return False
         return True
 
     def consume(action: ActionSpec) -> None:
@@ -247,8 +256,7 @@ def ev_per_resource_greedy(
             magnitudes = _resource_magnitude(actions[j])
             if feasible(actions[j]):
                 ratio = float(net_ev[i, j]) / magnitudes
-                if ratio > best:
-                    best = ratio
+                best = max(best, ratio)
         scores[i] = best
 
     order = np.argsort(-scores, kind="stable")
@@ -264,12 +272,14 @@ def ev_per_resource_greedy(
                 picked = j
                 break
         if picked is None:
-            picked = next((j for j in range(m) if actions[j].action_id == no_op_action_id), 0)
+            picked = next(
+                (j for j in range(m) if actions[j].action_id == no_op_action_id), 0
+            )
         consume(actions[picked])
         chosen[i] = picked
 
     net_per_txn = [float(net_ev[i, chosen[i]]) for i in range(n)]
-    used: Dict[str, float] = {k: 0.0 for k in RESOURCE_KEYS}
+    used: dict[str, float] = {k: 0.0 for k in RESOURCE_KEYS}
     for i in range(n):
         cons = _resource_consumption(actions[chosen[i]])
         for k in RESOURCE_KEYS:
@@ -287,4 +297,4 @@ def ev_per_resource_greedy(
     )
 
 
-__all__ = ["Optimizer", "PortfolioPlan", "ev_per_resource_greedy", "OptimizerConfig"]
+__all__ = ["Optimizer", "OptimizerConfig", "PortfolioPlan", "ev_per_resource_greedy"]

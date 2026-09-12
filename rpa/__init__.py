@@ -4,56 +4,62 @@ Components: prediction service, expected-value engine, policy engine, RPA
 optimizer, strategy comparison, execution simulator, verification layer,
 audit trail, batch orchestrator, FastAPI MVP API.
 """
+
 from rpa.config import (
     DEFAULT_MODEL_IDENTIFIER,
-    POLICY_VERSION,
-    OPTIMIZER_VERSION,
     EV_ENGINE_VERSION,
+    OPTIMIZER_VERSION,
+    POLICY_VERSION,
     SIMULATOR_VERSION,
     VERIFICATION_VERSION,
 )
-from rpa.ev_engine import EVEngine, EVTable, EVRow
-from rpa.execution_simulator import ExecutionSimulator, ExecutionResult
+from rpa.ev_engine import EVEngine, EVRow, EVTable
+from rpa.execution_simulator import ExecutionResult, ExecutionSimulator
 from rpa.optimizer import Optimizer, PortfolioPlan, ev_per_resource_greedy
 from rpa.orchestrator import (
-    RPABatchOrchestrator,
     BatchResult,
-    run_batch_on_split,
+    RPABatchOrchestrator,
     load_batch_result,
+    run_batch_on_split,
 )
 from rpa.policy_engine import PolicyEngine, PolicyVerdict
-from rpa.prediction_service import PredictionService, PredictionResult
-from rpa.strategies import StrategyRunner, StrategyConfig, RuleBasedEngine, STRATEGY_NAMES
+from rpa.prediction_service import PredictionResult, PredictionService
+from rpa.strategies import (
+    STRATEGY_NAMES,
+    RuleBasedEngine,
+    StrategyConfig,
+    StrategyRunner,
+)
 from rpa.verification import VerificationLayer, VerificationResult
 
 __version__ = "0.3.0"
 __all__ = [
     "DEFAULT_MODEL_IDENTIFIER",
-    "POLICY_VERSION",
-    "OPTIMIZER_VERSION",
     "EV_ENGINE_VERSION",
+    "OPTIMIZER_VERSION",
+    "POLICY_VERSION",
     "SIMULATOR_VERSION",
+    "STRATEGY_NAMES",
     "VERIFICATION_VERSION",
-    "EVEngine",
-    "EVTable",
-    "EVRow",
-    "ExecutionSimulator",
-    "ExecutionResult",
-    "Optimizer",
-    "PortfolioPlan",
-    "ev_per_resource_greedy",
-    "RPABatchOrchestrator",
     "BatchResult",
-    "run_batch_on_split",
-    "load_batch_result",
+    "EVEngine",
+    "EVRow",
+    "EVTable",
+    "ExecutionResult",
+    "ExecutionSimulator",
+    "Optimizer",
     "PolicyEngine",
     "PolicyVerdict",
-    "PredictionService",
+    "PortfolioPlan",
     "PredictionResult",
-    "StrategyRunner",
-    "StrategyConfig",
+    "PredictionService",
+    "RPABatchOrchestrator",
     "RuleBasedEngine",
-    "STRATEGY_NAMES",
+    "StrategyConfig",
+    "StrategyRunner",
     "VerificationLayer",
     "VerificationResult",
+    "ev_per_resource_greedy",
+    "load_batch_result",
+    "run_batch_on_split",
 ]

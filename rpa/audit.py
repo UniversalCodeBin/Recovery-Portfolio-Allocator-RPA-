@@ -18,20 +18,21 @@ An evaluator can answer with one query:
 The audit is append-only by design. Rows are keyed by
 (component: audit_event) with batch-run linkage and full context in JSON.
 """
+
 from __future__ import annotations
 
 import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rpa.config import (
-    SIMULATOR_VERSION,
-    VERIFICATION_VERSION,
     EV_ENGINE_VERSION,
     OPTIMIZER_VERSION,
     POLICY_VERSION,
+    SIMULATOR_VERSION,
+    VERIFICATION_VERSION,
 )
 from rpa.ev_engine import EVTable
 from rpa.execution_simulator import ExecutionResult
@@ -57,13 +58,13 @@ def new_id(prefix: str) -> str:
 class AuditEvent:
     audit_id: str
     batch_id: str
-    component: str          # prediction | ev | policy | optimizer | execution | verification
+    component: str  # prediction | ev | policy | optimizer | execution | verification
     event_type: str
-    entity_id: str = ""     # transaction_id (or batch for batch-level events)
-    event_metadata: Dict[str, Any] = field(default_factory=dict)
+    entity_id: str = ""  # transaction_id (or batch for batch-level events)
+    event_metadata: dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=now_iso)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "audit_id": self.audit_id,
             "batch_id": self.batch_id,
@@ -80,7 +81,7 @@ class AuditTrail:
 
     def __init__(self, batch_id: str) -> None:
         self.batch_id = batch_id
-        self.events: List[AuditEvent] = []
+        self.events: list[AuditEvent] = []
 
     # -- batch-level --------------------------------------------------------
     def record_batch(
@@ -91,9 +92,9 @@ class AuditTrail:
         model_metadata: dict,
         n_transactions: int,
         n_actions: int,
-        actions: List[ActionSpec],
-        resource_limits: Dict[str, Optional[float]],
-        strategies: List[str],
+        actions: list[ActionSpec],
+        resource_limits: dict[str, float | None],
+        strategies: list[str],
     ) -> AuditEvent:
         ev = AuditEvent(
             audit_id=new_id("aud"),
@@ -156,7 +157,7 @@ class AuditTrail:
         return ev
 
     # -- policy ---------------------------------------------------------
-    def record_policy(self, verdicts: List[PolicyVerdict]) -> AuditEvent:
+    def record_policy(self, verdicts: list[PolicyVerdict]) -> AuditEvent:
         ev = AuditEvent(
             audit_id=new_id("aud"),
             batch_id=self.batch_id,
@@ -173,8 +174,8 @@ class AuditTrail:
     # -- optimizer / strategy decision -------------------------------------
     def record_decisions(
         self,
-        plans: Dict[str, PortfolioPlan],
-        rejected_alternatives: Optional[Dict[str, List[Dict]]] = None,
+        plans: dict[str, PortfolioPlan],
+        rejected_alternatives: dict[str, list[dict]] | None = None,
     ) -> AuditEvent:
         decisions = {}
         for name, plan in plans.items():
@@ -235,7 +236,7 @@ class AuditTrail:
         return ev
 
     # -- persistence ---------------------------------------------------------
-    def to_dicts(self) -> List[Dict[str, Any]]:
+    def to_dicts(self) -> list[dict[str, Any]]:
         return [e.to_dict() for e in self.events]
 
     def to_json(self) -> str:
@@ -243,14 +244,13 @@ class AuditTrail:
 
     def write(self, path) -> None:
         import pathlib
+
         path = pathlib.Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(self.to_json(), encoding="utf-8")
 
     # -- inspection helpers ---------------------------------------------------
-    def decisions_for_transaction(
-        self, transaction_id: str
-    ) -> List[Dict[str, Any]]:
+    def decisions_for_transaction(self, transaction_id: str) -> list[dict[str, Any]]:
         """Return all audit events touching a transaction, in order added."""
         out = []
         for e in self.events:
@@ -258,7 +258,9 @@ class AuditTrail:
                 out.append(e.to_dict())
         return out
 
-    def explain_selection(self, transaction_id: str, strategy: str = "rpa_optimizer") -> Dict[str, Any]:
+    def explain_selection(
+        self, transaction_id: str, strategy: str = "rpa_optimizer"
+    ) -> dict[str, Any]:
         """Human-readable 'why was this action chosen' narrative.
 
         The narrative is self-consistent: prediction, EV and policy rows shown
@@ -293,21 +295,30 @@ class AuditTrail:
                 for row in meta.get("rows", []):
                     if row.get("transaction_id") != transaction_id:
                         continue
-                    if chosen_action_id is None or row.get("action_id") == chosen_action_id:
+                    if (
+                        chosen_action_id is None
+                        or row.get("action_id") == chosen_action_id
+                    ):
                         explanation["prediction"] = row
                         break
             if e.component == "ev":
                 for row in meta.get("rows", []):
                     if row.get("transaction_id") != transaction_id:
                         continue
-                    if chosen_action_id is None or row.get("action_id") == chosen_action_id:
+                    if (
+                        chosen_action_id is None
+                        or row.get("action_id") == chosen_action_id
+                    ):
                         explanation["ev"] = row
                         break
             if e.component == "policy":
                 for v in meta.get("verdicts", []):
                     if v.get("transaction_id") != transaction_id:
                         continue
-                    if chosen_action_id is None or v.get("action_id") == chosen_action_id:
+                    if (
+                        chosen_action_id is None
+                        or v.get("action_id") == chosen_action_id
+                    ):
                         explanation["policy"] = v
                         break
             if e.component == "execution" and e.event_type == f"execution_{strategy}":
@@ -323,4 +334,4 @@ class AuditTrail:
         return explanation
 
 
-__all__ = ["AuditTrail", "AuditEvent"]
+__all__ = ["AuditEvent", "AuditTrail"]

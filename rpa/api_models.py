@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 # =============================================================================
 # Common types and enums
 # =============================================================================
+
 
 class StrategyName(str, Enum):
     NO_ACTION = "no_action"
@@ -75,58 +75,70 @@ class UserRole(str, Enum):
 # Error response models
 # =============================================================================
 
+
 class ErrorDetail(BaseModel):
     """Structured error detail."""
+
     code: str
     message: str
-    field: Optional[str] = None
-    context: Dict[str, Any] = Field(default_factory=dict)
+    field: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class ErrorResponse(BaseModel):
     """Standardized error response envelope."""
+
     error: ErrorDetail
     request_id: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+        json_encoders: ClassVar[dict] = {datetime: lambda v: v.isoformat()}
 
 
 # =============================================================================
 # Request models
 # =============================================================================
 
+
 class ResourceLimitsRequest(BaseModel):
     """Shared resource capacity limits for a batch."""
-    retry: Optional[int] = Field(None, ge=0, description="Max retry attempts")
-    messaging: Optional[int] = Field(None, ge=0, description="Max message sends")
-    incentive_budget: Optional[float] = Field(None, ge=0, description="Total incentive budget (INR)")
-    human_slots: Optional[int] = Field(None, ge=0, description="Max human escalation slots")
+
+    retry: int | None = Field(None, ge=0, description="Max retry attempts")
+    messaging: int | None = Field(None, ge=0, description="Max message sends")
+    incentive_budget: float | None = Field(
+        None, ge=0, description="Total incentive budget (INR)"
+    )
+    human_slots: int | None = Field(
+        None, ge=0, description="Max human escalation slots"
+    )
 
     @model_validator(mode="after")
-    def check_at_least_one(self) -> "ResourceLimitsRequest":
+    def check_at_least_one(self) -> ResourceLimitsRequest:
         # Allow empty for defaults
         return self
 
 
 class BatchRequest(BaseModel):
     """Create and run a recovery batch."""
+
     split: str = Field("demo", min_length=1, description="Data split to use")
-    batch_seed: int = Field(0, ge=0, description="Random seed for reproducible simulation")
-    resource_limits: Optional[ResourceLimitsRequest] = None
-    strategies: Optional[List[StrategyName]] = Field(
+    batch_seed: int = Field(
+        0, ge=0, description="Random seed for reproducible simulation"
+    )
+    resource_limits: ResourceLimitsRequest | None = None
+    strategies: list[StrategyName] | None = Field(
         None,
         description="Strategies to run (default: all except rule_based)",
     )
-    transaction_ids: Optional[List[str]] = Field(
+    transaction_ids: list[str] | None = Field(
         None,
         description="Subset of transaction IDs to process",
     )
 
     @field_validator("transaction_ids")
     @classmethod
-    def validate_txn_ids(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+    def validate_txn_ids(cls, v: list[str] | None) -> list[str] | None:
         if v is not None:
             if not v:
                 raise ValueError("transaction_ids must not be empty")
@@ -137,25 +149,28 @@ class BatchRequest(BaseModel):
 
 class PreviewRequest(BaseModel):
     """Preview candidate actions (predictions + EV + policy) without execution."""
+
     split: str = Field("demo", min_length=1)
-    transaction_ids: Optional[List[str]] = None
+    transaction_ids: list[str] | None = None
 
 
 class StrategyRequest(BaseModel):
     """Run a single strategy on a batch."""
+
     split: str = Field("demo", min_length=1)
     strategy: StrategyName
     batch_seed: int = Field(0, ge=0)
-    resource_limits: Optional[ResourceLimitsRequest] = None
+    resource_limits: ResourceLimitsRequest | None = None
 
 
 class ExecuteRequest(BaseModel):
     """Execute an approved plan (simulation in demo, real in production)."""
+
     split: str = Field("demo", min_length=1)
     strategy: StrategyName = StrategyName.RPA_OPTIMIZER
     batch_seed: int = Field(0, ge=0)
-    resource_limits: Optional[ResourceLimitsRequest] = None
-    idempotency_key: Optional[str] = Field(
+    resource_limits: ResourceLimitsRequest | None = None
+    idempotency_key: str | None = Field(
         None,
         min_length=1,
         max_length=64,
@@ -165,16 +180,18 @@ class ExecuteRequest(BaseModel):
 
 class JobCreateRequest(BaseModel):
     """Create an async recovery job."""
+
     split: str = Field("demo", min_length=1)
     batch_seed: int = Field(0, ge=0)
-    resource_limits: Optional[ResourceLimitsRequest] = None
-    strategies: Optional[List[StrategyName]] = None
-    transaction_ids: Optional[List[str]] = None
+    resource_limits: ResourceLimitsRequest | None = None
+    strategies: list[StrategyName] | None = None
+    transaction_ids: list[str] | None = None
     idempotency_key: str = Field(..., min_length=1, max_length=64)
 
 
 class PaginationParams(BaseModel):
     """Standard pagination parameters."""
+
     limit: int = Field(50, ge=1, le=200)
     offset: int = Field(0, ge=0)
 
@@ -183,18 +200,19 @@ class PaginationParams(BaseModel):
 # Response models
 # =============================================================================
 
+
 class ActionSpecResponse(BaseModel):
     action_id: str
     action_type: ActionType
     action_cost: float
-    resource_requirements: Dict[str, float]
+    resource_requirements: dict[str, float]
     enabled: bool
 
 
 class ActionsResponse(BaseModel):
-    actions: List[ActionSpecResponse]
+    actions: list[ActionSpecResponse]
     default_resource_limits: ResourceLimitsRequest
-    available_splits: List[str]
+    available_splits: list[str]
 
 
 class HealthResponse(BaseModel):
@@ -245,18 +263,18 @@ class BatchSummary(BaseModel):
     status: str
     n_transactions: int
     n_actions: int
-    strategy_metrics: Dict[str, StrategyMetric]
+    strategy_metrics: dict[str, StrategyMetric]
     n_blocked_candidates: int
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class BatchListItem(BaseModel):
     batch_id: str
     status: str
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
     n_transactions: int
-    strategies: List[str]
-    strategy_summaries: Optional[Dict[str, Any]] = None
+    strategies: list[str]
+    strategy_summaries: dict[str, Any] | None = None
     has_audit: bool = False
 
 
@@ -282,16 +300,16 @@ class PolicyVerdictResponse(BaseModel):
     policy_id: str
     rule: str
     reason: str
-    limit: Optional[float] = None
-    current_usage: Optional[float] = None
+    limit: float | None = None
+    current_usage: float | None = None
 
 
 class PreviewResponse(BaseModel):
     model_identifier: str
     n_transactions: int
     n_actions: int
-    rows: List[EVTableRow]
-    verdicts: List[PolicyVerdictResponse]
+    rows: list[EVTableRow]
+    verdicts: list[PolicyVerdictResponse]
 
 
 class PlanRecord(BaseModel):
@@ -314,8 +332,8 @@ class ExecutionRecord(BaseModel):
     recovered_amount: float
     recovery_cost: float
     net_recovered_amount: float
-    p_predicted: Optional[float] = None
-    seed: Optional[int] = None
+    p_predicted: float | None = None
+    seed: int | None = None
     simulation: bool
 
 
@@ -326,8 +344,8 @@ class VerificationRow(BaseModel):
     planned_net_ev: float
     planned_index: int
     executed: bool
-    executed_action_id: Optional[str] = None
-    executed_status: Optional[str] = None
+    executed_action_id: str | None = None
+    executed_status: str | None = None
     successful: bool
     failed: bool
     blocked: bool
@@ -335,34 +353,34 @@ class VerificationRow(BaseModel):
     recovery_cost: float
     net_recovered_amount: float
     verified: bool
-    verification_error: Optional[str] = None
+    verification_error: str | None = None
 
 
 class VerificationResponse(BaseModel):
     batch_metrics: StrategyMetric
-    rows: List[VerificationRow]
+    rows: list[VerificationRow]
 
 
 class FullBatchResult(BaseModel):
     batch_id: str
     status: str
-    created_at: Optional[datetime] = None
-    error: Optional[str] = None
-    ev_table: Optional[List[EVTableRow]] = None
-    verdicts: Optional[List[PolicyVerdictResponse]] = None
-    plans: Optional[Dict[str, List[PlanRecord]]] = None
-    executions: Optional[Dict[str, List[ExecutionRecord]]] = None
-    verifications: Optional[Dict[str, VerificationResponse]] = None
-    transaction_ids: Optional[List[str]] = None
-    resource_limits: Optional[ResourceLimitsRequest] = None
-    summary: Optional[BatchSummary] = None
+    created_at: datetime | None = None
+    error: str | None = None
+    ev_table: list[EVTableRow] | None = None
+    verdicts: list[PolicyVerdictResponse] | None = None
+    plans: dict[str, list[PlanRecord]] | None = None
+    executions: dict[str, list[ExecutionRecord]] | None = None
+    verifications: dict[str, VerificationResponse] | None = None
+    transaction_ids: list[str] | None = None
+    resource_limits: ResourceLimitsRequest | None = None
+    summary: BatchSummary | None = None
 
 
 class CompareResponse(BaseModel):
     batch_id: str
     batch_seed: int
     simulation: bool
-    strategies: Dict[str, StrategyMetric]
+    strategies: dict[str, StrategyMetric]
 
 
 class ExecutionResponse(BaseModel):
@@ -370,7 +388,7 @@ class ExecutionResponse(BaseModel):
     strategy: StrategyName
     simulation: bool
     batch_metrics: StrategyMetric
-    executions: List[ExecutionRecord]
+    executions: list[ExecutionRecord]
 
 
 class AuditEventResponse(BaseModel):
@@ -379,19 +397,19 @@ class AuditEventResponse(BaseModel):
     component: str
     event_type: str
     entity_id: str
-    event_metadata: Dict[str, Any]
+    event_metadata: dict[str, Any]
     timestamp: datetime
 
 
 class DecisionExplanation(BaseModel):
     batch_id: str
     transaction_id: str
-    prediction: Optional[Dict[str, Any]] = None
-    ev: Optional[EVTableRow] = None
-    policy: Optional[PolicyVerdictResponse] = None
-    decision: Optional[PlanRecord] = None
-    execution: Optional[ExecutionRecord] = None
-    verification: Optional[VerificationRow] = None
+    prediction: dict[str, Any] | None = None
+    ev: EVTableRow | None = None
+    policy: PolicyVerdictResponse | None = None
+    decision: PlanRecord | None = None
+    execution: ExecutionRecord | None = None
+    verification: VerificationRow | None = None
 
 
 # Job models
@@ -404,10 +422,10 @@ class JobResponse(BaseModel):
 
 
 class JobDetailResponse(JobResponse):
-    request_payload: Dict[str, Any]
-    error_code: Optional[str] = None
+    request_payload: dict[str, Any]
+    error_code: str | None = None
     correlation_id: UUID
-    result: Optional[FullBatchResult] = None
+    result: FullBatchResult | None = None
 
 
 # Auth models
@@ -485,7 +503,7 @@ class ProductionExecutionResponse(BaseModel):
     model_version: str
     optimizer_version: str
     decision_expires_at: datetime
-    provider_reference: Optional[str] = None
+    provider_reference: str | None = None
     correlation_id: UUID
     created_at: datetime
     updated_at: datetime
@@ -496,6 +514,6 @@ class WebhookEventRequest(BaseModel):
     provider: str
     event_id: str
     event_type: str
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
     signature: str
     timestamp: int

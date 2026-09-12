@@ -19,10 +19,8 @@ is always allowed, guaranteeing a feasible plan.
 Each strategy returns a :class:`PortfolioPlan` with a normalized shape, so
 strategies can be compared directly.
 """
-from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+from __future__ import annotations
 
 import numpy as np
 
@@ -60,7 +58,7 @@ class RuleBasedEngine:
     SUCCESS_MIN = 0.6
     MAX_RETRIES = 2
 
-    def choose(self, row: Dict, allowed_types: List[str]) -> Optional[str]:
+    def choose(self, row: dict, allowed_types: list[str]) -> str | None:
         """Return the preferred action TYPE if allowed, else None."""
         amount = float(row.get("amount", 0.0))
         overdue = int(row.get("days_overdue", 0))
@@ -68,8 +66,11 @@ class RuleBasedEngine:
         success = float(row.get("historical_success_rate", 0.0))
 
         priority_types = []
-        if (amount >= self.HIGH_AMOUNT and overdue >= self.OVERDUE_HIGH
-                and success <= self.SUCCESS_THRESHOLD):
+        if (
+            amount >= self.HIGH_AMOUNT
+            and overdue >= self.OVERDUE_HIGH
+            and success <= self.SUCCESS_THRESHOLD
+        ):
             priority_types.append("human_escalation")
         elif amount >= self.MID_AMOUNT and overdue >= self.OVERDUE_MID:
             priority_types.append("incentive")
@@ -86,14 +87,14 @@ class RuleBasedEngine:
         return None
 
 
-def _action_by_type(actions: List[ActionSpec], action_type: str) -> Optional[ActionSpec]:
+def _action_by_type(actions: list[ActionSpec], action_type: str) -> ActionSpec | None:
     for a in actions:
         if a.action_type == action_type:
             return a
     return None
 
 
-def _action_by_id(actions: List[ActionSpec], action_id: str) -> Optional[ActionSpec]:
+def _action_by_id(actions: list[ActionSpec], action_id: str) -> ActionSpec | None:
     for a in actions:
         if a.action_id == action_id:
             return a
@@ -104,8 +105,8 @@ class StrategyConfig:
     def __init__(
         self,
         no_op_action_id: str = "act_no_intervention",
-        rule: Optional[RuleBasedEngine] = None,
-        optimizer: Optional[Optimizer] = None,
+        rule: RuleBasedEngine | None = None,
+        optimizer: Optimizer | None = None,
     ) -> None:
         self.no_op_action_id = no_op_action_id
         self.rule = rule or RuleBasedEngine()
@@ -115,32 +116,38 @@ class StrategyConfig:
 class StrategyRunner:
     """Runs each strategy over identical inputs -> {name: PortfolioPlan}."""
 
-    def __init__(self, config: Optional[StrategyConfig] = None) -> None:
+    def __init__(self, config: StrategyConfig | None = None) -> None:
         self.config = config or StrategyConfig()
 
     # -- build allowed-action boolean matrix from policy verdicts ----------
     @staticmethod
     def _allowed_matrix(
         ev: EVTable,
-        verdicts: List[PolicyVerdict],
-        actions: List[ActionSpec],
+        verdicts: list[PolicyVerdict],
+        actions: list[ActionSpec],
     ) -> np.ndarray:
-        allowed = np.zeros((ev.n_transactions, len(actions)), dtype=bool)
+        allowed = np.zeros((ev.n_transactions, len(actions)), dtype=bool)  # type: ignore[type-var]
         action_idx = {a.action_id: j for j, a in enumerate(actions)}
         vmap = {(v.transaction_id, v.action_id): v for v in verdicts}
         for row in ev.rows:
             v = vmap.get((row.transaction_id, row.action_id))
             if v is not None and v.decision == "ALLOW":
-                allowed[ev.row_index(row.transaction_id), action_idx[row.action_id]] = True
+                allowed[ev.row_index(row.transaction_id), action_idx[row.action_id]] = (
+                    True
+                )
         return allowed
 
     # ------------------------------------------------------------------
     def no_action(
-        self, ev: EVTable, transaction_ids: List[str], actions: List[ActionSpec],
-        capacity: Dict[str, Optional[float]],
+        self,
+        ev: EVTable,
+        transaction_ids: list[str],
+        actions: list[ActionSpec],
+        capacity: dict[str, float | None],
     ) -> PortfolioPlan:
-        no_op = _action_by_type(actions, "no_intervention") \
-            or _action_by_id(actions, self.config.no_op_action_id)
+        no_op = _action_by_type(actions, "no_intervention") or _action_by_id(
+            actions, self.config.no_op_action_id
+        )
         if no_op is None:
             raise ValueError("no no-op action available")
         n = len(transaction_ids)
@@ -159,15 +166,24 @@ class StrategyRunner:
 
     # ------------------------------------------------------------------
     def rule_based(
-        self, ev: EVTable, transactions, transaction_ids: List[str], actions: List[ActionSpec],
-        capacity: Dict[str, Optional[float]], verdicts: List[PolicyVerdict],
+        self,
+        ev: EVTable,
+        transactions,
+        transaction_ids: list[str],
+        actions: list[ActionSpec],
+        capacity: dict[str, float | None],
+        verdicts: list[PolicyVerdict],
     ) -> PortfolioPlan:
-        allowed_types_per_txn: Dict[str, List[str]] = {t: [] for t in transaction_ids}
+        allowed_types_per_txn: dict[str, list[str]] = {t: [] for t in transaction_ids}
         for v in verdicts:
             if v.decision == "ALLOW":
-                allowed_types_per_txn.setdefault(v.transaction_id, []).append(v.action_type)
-        txn_rows = {r.get("transaction_id"): r for r in transactions.to_dict(orient="records")}
-        used: Dict[str, float] = {k: 0.0 for k in RESOURCE_KEYS}
+                allowed_types_per_txn.setdefault(v.transaction_id, []).append(
+                    v.action_type
+                )
+        txn_rows = {
+            r.get("transaction_id"): r for r in transactions.to_dict(orient="records")
+        }
+        used: dict[str, float] = {k: 0.0 for k in RESOURCE_KEYS}
         remaining = {k: float(v) for k, v in capacity.items() if v is not None}
 
         def fits(action: ActionSpec) -> bool:
@@ -177,22 +193,31 @@ class StrategyRunner:
                 if units and units > 0
             )
 
-        def allowed_action(txn_id: str, action: Optional[ActionSpec]) -> bool:
-            return action is not None and action.action_type in allowed_types_per_txn.get(txn_id, [])
-        chosen_actions: List[ActionSpec] = []
-        net_vals: List[float] = []
+        def allowed_action(txn_id: str, action: ActionSpec | None) -> bool:
+            return (
+                action is not None
+                and action.action_type in allowed_types_per_txn.get(txn_id, [])
+            )
+
+        chosen_actions: list[ActionSpec] = []
+        net_vals: list[float] = []
         for t in transaction_ids:
             row = txn_rows.get(t, {})
-            allowed_types = [x for x in allowed_types_per_txn.get(t, []) if x != "no_intervention"]
+            allowed_types = [
+                x for x in allowed_types_per_txn.get(t, []) if x != "no_intervention"
+            ]
             pref_type = self.config.rule.choose(row, allowed_types)
             act = None
             if pref_type is not None:
                 act = _action_by_type(actions, pref_type)
-            if not allowed_action(t, act) or not fits(act):
-                act = _action_by_type(actions, "no_intervention") \
-                    or _action_by_id(actions, self.config.no_op_action_id)
-            if not allowed_action(t, act) or not fits(act):
-                raise ValueError(f"no policy-approved feasible action for transaction {t}")
+            if act is None or not allowed_action(t, act) or not fits(act):
+                act = _action_by_type(actions, "no_intervention") or _action_by_id(
+                    actions, self.config.no_op_action_id
+                )
+            if act is None or not allowed_action(t, act) or not fits(act):
+                raise ValueError(
+                    f"no policy-approved feasible action for transaction {t}"
+                )
             chosen_actions.append(act)
             j = next(i for i, a in enumerate(actions) if a.action_id == act.action_id)
             net_vals.append(float(ev.net_ev_matrix[ev.row_index(t), j]))
@@ -214,41 +239,57 @@ class StrategyRunner:
 
     # ------------------------------------------------------------------
     def ev_greedy(
-        self, ev: EVTable, transaction_ids: List[str], actions: List[ActionSpec],
-        capacity: Dict[str, Optional[float]], verdicts: List[PolicyVerdict],
+        self,
+        ev: EVTable,
+        transaction_ids: list[str],
+        actions: list[ActionSpec],
+        capacity: dict[str, float | None],
+        verdicts: list[PolicyVerdict],
     ) -> PortfolioPlan:
         allowed = self._allowed_matrix(ev, verdicts, actions)
         masked = np.where(allowed, ev.net_ev_matrix, -np.inf)
         return ev_per_resource_greedy(
-            masked, actions, transaction_ids, capacity, no_op_action_id=self.config.no_op_action_id
+            masked,
+            actions,
+            transaction_ids,
+            capacity,
+            no_op_action_id=self.config.no_op_action_id,
         )
 
     # ------------------------------------------------------------------
     def rpa_optimizer(
-        self, ev: EVTable, transaction_ids: List[str], actions: List[ActionSpec],
-        capacity: Dict[str, Optional[float]], verdicts: List[PolicyVerdict],
+        self,
+        ev: EVTable,
+        transaction_ids: list[str],
+        actions: list[ActionSpec],
+        capacity: dict[str, float | None],
+        verdicts: list[PolicyVerdict],
     ) -> PortfolioPlan:
         allowed = self._allowed_matrix(ev, verdicts, actions)
         masked = np.where(allowed, ev.net_ev_matrix, -1e6)
-        return self.config.optimizer.solve(
-            masked, actions, transaction_ids, capacity
-        )
+        return self.config.optimizer.solve(masked, actions, transaction_ids, capacity)
 
     # ------------------------------------------------------------------
     def run_all(
         self,
         ev: EVTable,
         transactions,
-        transaction_ids: List[str],
-        actions: List[ActionSpec],
-        capacity: Dict[str, Optional[float]],
-        verdicts: List[PolicyVerdict],
-    ) -> Dict[str, PortfolioPlan]:
+        transaction_ids: list[str],
+        actions: list[ActionSpec],
+        capacity: dict[str, float | None],
+        verdicts: list[PolicyVerdict],
+    ) -> dict[str, PortfolioPlan]:
         return {
             "no_action": self.no_action(ev, transaction_ids, actions, capacity),
-            "rule_based": self.rule_based(ev, transactions, transaction_ids, actions, capacity, verdicts),
-            "ev_greedy": self.ev_greedy(ev, transaction_ids, actions, capacity, verdicts),
-            "rpa_optimizer": self.rpa_optimizer(ev, transaction_ids, actions, capacity, verdicts),
+            "rule_based": self.rule_based(
+                ev, transactions, transaction_ids, actions, capacity, verdicts
+            ),
+            "ev_greedy": self.ev_greedy(
+                ev, transaction_ids, actions, capacity, verdicts
+            ),
+            "rpa_optimizer": self.rpa_optimizer(
+                ev, transaction_ids, actions, capacity, verdicts
+            ),
         }
 
     def run_one(self, name: str, *args, **kwargs) -> PortfolioPlan:
@@ -259,8 +300,8 @@ class StrategyRunner:
 
 
 __all__ = [
-    "StrategyRunner",
-    "StrategyConfig",
-    "RuleBasedEngine",
     "STRATEGY_NAMES",
+    "RuleBasedEngine",
+    "StrategyConfig",
+    "StrategyRunner",
 ]

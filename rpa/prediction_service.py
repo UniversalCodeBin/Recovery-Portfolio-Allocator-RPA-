@@ -12,26 +12,25 @@ It does NOT duplicate the ML pipeline — scoring delegates to
 :class:`ml.model.TrainedLogisticModel.predict_proba` via the Step 2 feature
 pipeline, and loading delegations to :func:`rpa.loading.load_frozen_model`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
 from ml.model import TrainedLogisticModel
-from ml.versioning import artifact_paths, now_iso
-
+from ml.versioning import now_iso
 from rpa.config import DEFAULT_MODEL_IDENTIFIER, MODEL_FEATURE_FLAGS
 from rpa.loading import (
     ActionSpec,
+    live_score,
     load_actions,
     load_customers,
     load_frozen_model,
     load_transactions,
-    live_score,
 )
 
 
@@ -43,11 +42,11 @@ class PredictionValidationError(ValueError):
 class PredictionResult:
     """Output of the prediction service for one batch."""
 
-    probabilities: np.ndarray              # (n_txn, n_action)
-    frame: pd.DataFrame                    # long-form (txn, action, p, model_id)
+    probabilities: np.ndarray  # (n_txn, n_action)
+    frame: pd.DataFrame  # long-form (txn, action, p, model_id)
     model_identifier: str
-    model_metadata: Dict
-    feature_spec: Dict
+    model_metadata: dict
+    feature_spec: dict
     n_transactions: int
     n_actions: int
     scored_at: str = field(default_factory=now_iso)
@@ -58,26 +57,28 @@ class PredictionService:
 
     def __init__(
         self,
-        model: Optional[TrainedLogisticModel] = None,
+        model: TrainedLogisticModel | None = None,
         model_id: str = DEFAULT_MODEL_IDENTIFIER,
-        model_dir: Optional[Path] = None,
+        model_dir: Path | None = None,
         flags=MODEL_FEATURE_FLAGS,
     ) -> None:
         self.model_id = model_id
         self.flags = flags
         self._model = model
         self._model_dir = model_dir
-        self._metadata: Optional[Dict] = None
+        self._metadata: dict | None = None
 
     # -- lazy load so tests can inject a model directly -----------------
     @property
     def model(self) -> TrainedLogisticModel:
         if self._model is None:
-            self._model = load_frozen_model(self.model_id, self._model_dir)
+            self._model = load_frozen_model(
+                self.model_id, self._model_dir or Path("models")
+            )
         return self._model
 
     @property
-    def metadata(self) -> Dict:
+    def metadata(self) -> dict:
         if self._metadata is None:
             loaded = self.model
             meta = {
@@ -95,7 +96,7 @@ class PredictionService:
         self,
         transactions: pd.DataFrame,
         customers: pd.DataFrame,
-        actions: List[ActionSpec],
+        actions: list[ActionSpec],
     ) -> None:
         required = ["transaction_id", "amount", "customer_id"]
         missing = [c for c in required if c not in transactions.columns]
@@ -115,7 +116,9 @@ class PredictionService:
     # -- output validation -----------------------------------------------
     def validate_output(self, probs: np.ndarray) -> None:
         if probs.ndim != 2:
-            raise PredictionValidationError(f"expected 2D probability matrix, got {probs.ndim}D")
+            raise PredictionValidationError(
+                f"expected 2D probability matrix, got {probs.ndim}D"
+            )
         if np.isnan(probs).any():
             raise PredictionValidationError("prediction output contains NaN")
         if (probs < 0.0).any() or (probs > 1.0).any():
@@ -126,13 +129,11 @@ class PredictionService:
         self,
         transactions: pd.DataFrame,
         customers: pd.DataFrame,
-        actions: List[ActionSpec],
+        actions: list[ActionSpec],
     ) -> PredictionResult:
         """Score a transaction/action context with the frozen model."""
         self.validate_inputs(transactions, customers, actions)
-        frame = live_score(
-            self.model, transactions, customers, actions, self.flags
-        )
+        frame = live_score(self.model, transactions, customers, actions, self.flags)
         # Verify all (txn, action) pairs are present.
         n_txn = len(transactions)
         n_act = len(actions)
@@ -155,14 +156,19 @@ class PredictionService:
         )
 
     # -- convenience for a named split -----------------------------------
-    def score_split(self, split: str = "demo",
-                    actions: Optional[List[ActionSpec]] = None,
-                    transactions: Optional[pd.DataFrame] = None,
-                    customers: Optional[pd.DataFrame] = None) -> PredictionResult:
-        transactions = transactions if transactions is not None else load_transactions(split)
+    def score_split(
+        self,
+        split: str = "demo",
+        actions: list[ActionSpec] | None = None,
+        transactions: pd.DataFrame | None = None,
+        customers: pd.DataFrame | None = None,
+    ) -> PredictionResult:
+        transactions = (
+            transactions if transactions is not None else load_transactions(split)
+        )
         customers = customers if customers is not None else load_customers()
         actions = actions if actions is not None else load_actions()
         return self.score(transactions, customers, actions)
 
 
-__all__ = ["PredictionService", "PredictionResult", "PredictionValidationError"]
+__all__ = ["PredictionResult", "PredictionService", "PredictionValidationError"]

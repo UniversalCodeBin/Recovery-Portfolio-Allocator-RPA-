@@ -6,11 +6,6 @@ import pytest
 from actions import Resource
 from config import Action
 from data_generation import SyntheticDataGenerator
-from metrics import BatchMetrics, compute_batch_metrics
-from outcome_simulator import (
-    generate_uniform_draws,
-    simulate_outcomes_from_draws,
-)
 from strategies import (
     ev_greedy_strategy,
     fixed_rule_strategy,
@@ -175,6 +170,7 @@ def _mutated_batch(batch, amount_val):
         t2 = t.to_dict()
         t2["amount"] = amount_val
         from data_generation import Transaction
+
         out.append(Transaction(**t2))
     return out
 

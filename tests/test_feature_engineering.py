@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from feature_engineering import FeatureTransformer
 from data_generation import SyntheticDataGenerator
+from feature_engineering import FeatureTransformer
 
 
 @pytest.fixture()
@@ -46,7 +46,7 @@ def test_numeric_columns_standardized(pool):
     tr = FeatureTransformer().fit(pool)
     X = tr.transform(pool)
     # First NUMERIC_FEATURES columns should now be ~standardized.
-    num = X[:, : 7]
+    num = X[:, :7]
     means = num.mean(axis=0)
     assert np.allclose(means, 0.0, atol=1e-6)
     stds = num.std(axis=0)

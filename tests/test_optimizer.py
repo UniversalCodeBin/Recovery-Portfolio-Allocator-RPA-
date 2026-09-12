@@ -6,8 +6,14 @@ import pytest
 from config import Action
 from optimizer import brute_force_solve, solve_ilp
 
-ACT = [Action.NO_INTERVENTION, Action.RETRY, Action.PAYMENT_LINK,
-       Action.CUSTOMER_MESSAGE, Action.INCENTIVE, Action.HUMAN_ESCALATION]
+ACT = [
+    Action.NO_INTERVENTION,
+    Action.RETRY,
+    Action.PAYMENT_LINK,
+    Action.CUSTOMER_MESSAGE,
+    Action.INCENTIVE,
+    Action.HUMAN_ESCALATION,
+]
 
 
 def _ev(amounts: np.ndarray, action: Action) -> np.ndarray:
@@ -39,21 +45,24 @@ def build_ev_matrix(n: int, rng: np.random.Generator) -> np.ndarray:
 def test_solve_feasible_and_optimal_no_capacity():
     rng = np.random.default_rng(0)
     ev = build_ev_matrix(5, rng)
-    res = solve_ilp(ev, ACT, {"retry": None, "messaging": None,
-                              "incentive": None, "human": None})
+    res = solve_ilp(
+        ev, ACT, {"retry": None, "messaging": None, "incentive": None, "human": None}
+    )
     assert res.optimal
     assert set(np.unique(res.assignment)) <= set(range(len(ACT)))
     # Objective equals brute force.
-    obj_bf, assign_bf = brute_force_solve(ev, ACT, {"retry": None, "messaging": None,
-                                                    "incentive": None, "human": None})
+    obj_bf, _assign_bf = brute_force_solve(
+        ev, ACT, {"retry": None, "messaging": None, "incentive": None, "human": None}
+    )
     assert res.objective == pytest.approx(obj_bf, abs=1e-6)
 
 
 def test_one_action_per_transaction():
     rng = np.random.default_rng(1)
     ev = build_ev_matrix(7, rng)
-    res = solve_ilp(ev, ACT, {"retry": None, "messaging": None,
-                              "incentive": None, "human": None})
+    res = solve_ilp(
+        ev, ACT, {"retry": None, "messaging": None, "incentive": None, "human": None}
+    )
     assert len(res.assignment) == 7
 
 
@@ -107,20 +116,26 @@ def test_gaps_reflect_budget_consumption():
     ev = build_ev_matrix(4, rng)
     cap = {"retry": None, "messaging": None, "incentive": 100.0, "human": None}
     res = solve_ilp(ev, ACT, cap)
-    assert res.gaps["incentive"] == pytest.approx(res.resources_used["incentive"] / 100.0)
+    assert res.gaps["incentive"] == pytest.approx(
+        res.resources_used["incentive"] / 100.0
+    )
 
 
 def test_infeasible_shapes_raise():
     ev = np.zeros((3, 4))
     with pytest.raises(ValueError):
-        solve_ilp(ev, ACT, {"retry": None, "messaging": None,
-                            "incentive": None, "human": None})
+        solve_ilp(
+            ev,
+            ACT,
+            {"retry": None, "messaging": None, "incentive": None, "human": None},
+        )
 
 
 def test_edge_case_no_transactions():
     ev = np.zeros((0, len(ACT)))
-    res = solve_ilp(ev, ACT, {"retry": None, "messaging": None,
-                              "incentive": None, "human": None})
+    res = solve_ilp(
+        ev, ACT, {"retry": None, "messaging": None, "incentive": None, "human": None}
+    )
     assert len(res.assignment) == 0
 
 

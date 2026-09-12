@@ -8,13 +8,13 @@ Configuration-over-hard-coding: every tunable below is a constant that the
 tests and the API can override through dependency injection. There are NO
 hard-coded economics/limits inside the component modules.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
-from data_core.config import ROOT_DIR, VALIDATED_DIR, SPLITS_DIR
+from data_core.config import ROOT_DIR
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -41,9 +41,10 @@ VERIFICATION_VERSION: str = "verification-v1"
 # ---------------------------------------------------------------------------
 # Frozen-model feature flags (must match the frozen Step 2 artifact)
 # ---------------------------------------------------------------------------
-from ml.config import FeatureFlags  # noqa: E402
+from ml.config import FeatureFlags
 
 MODEL_FEATURE_FLAGS: FeatureFlags = FeatureFlags()  # all groups on
+
 
 # ---------------------------------------------------------------------------
 # Expected-value formula.
@@ -62,8 +63,8 @@ MODEL_FEATURE_FLAGS: FeatureFlags = FeatureFlags()  # all groups on
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class EVEngineConfig:
-    recovery_friction: float = 0.0        # fraction of amount not recoverable (default 0)
-    incentive_handling_fee: float = 5.0   # per-incentive channel fee (rupees)
+    recovery_friction: float = 0.0  # fraction of amount not recoverable (default 0)
+    incentive_handling_fee: float = 5.0  # per-incentive channel fee (rupees)
     prob_floor: float = 1e-6
     prob_ceil: float = 1.0 - 1e-6
 
@@ -77,17 +78,14 @@ class EVEngineConfig:
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class PolicyConfig:
-    min_net_ev_threshold: float = 0.0        # reject interventions with EV < this
-    max_incentive_per_transaction: Optional[float] = 5000.0  # never exceed
-    max_messages_per_batch: Optional[int] = None    # 0 => unlimited
-    max_human_slots_per_batch: Optional[int] = None # 0 => unlimited
-    max_retries_per_transaction: int = 2      # retry limit per transaction
-    prohibit_combination: List[str] = field(default_factory=lambda: [
-        # e.g. ["incentive", "human_escalation"] would forbid using both on
-        # one transaction; left empty by default (one action per txn already).
-    ])
+    min_net_ev_threshold: float = 0.0  # reject interventions with EV < this
+    max_incentive_per_transaction: float | None = 5000.0  # never exceed
+    max_messages_per_batch: int | None = None  # 0 => unlimited
+    max_human_slots_per_batch: int | None = None  # 0 => unlimited
+    max_retries_per_transaction: int = 2  # retry limit per transaction
+    prohibit_combination: list[str] = field(default_factory=list)
     # Actions that are NEVER allowed to be selected (hard block).
-    blocked_actions: List[str] = field(default_factory=list)
+    blocked_actions: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -105,9 +103,14 @@ class OptimizerConfig:
     # A no-op action is always available (fallback) so the problem is feasible.
     no_op_action_id: str = "act_no_intervention"
     # Resource keys the optimizer enforces as capacities (subset that binds).
-    resource_capacity_keys: List[str] = field(default_factory=lambda: [
-        "retry", "messaging", "incentive_budget", "human_slots",
-    ])
+    resource_capacity_keys: list[str] = field(
+        default_factory=lambda: [
+            "retry",
+            "messaging",
+            "incentive_budget",
+            "human_slots",
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -130,13 +133,13 @@ class SimulationConfig:
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ResourceLimits:
-    incentive_budget: Optional[float] = 5000.0
-    human_slots: Optional[int] = 50
-    messaging: Optional[int] = 2000
-    retry: Optional[int] = 2000
+    incentive_budget: float | None = 5000.0
+    human_slots: int | None = 50
+    messaging: int | None = 2000
+    retry: int | None = 2000
 
 
-def default_resource_limits() -> Dict[str, Optional[float]]:
+def default_resource_limits() -> dict[str, float | None]:
     return {
         "incentive_budget": ResourceLimits.incentive_budget,
         "human_slots": ResourceLimits.human_slots,

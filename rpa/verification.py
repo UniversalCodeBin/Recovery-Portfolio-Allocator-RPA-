@@ -11,24 +11,23 @@ Verification is deterministic: it reconciles what was *planned* (the
 (an action that was planned but came back blocked or missing) is surfaced as a
 verification flag/error — nothing is silently dropped.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
 
 import pandas as pd
 
+from rpa.config import VERIFICATION_VERSION
 from rpa.execution_simulator import ExecutionResult
 from rpa.loading import ActionSpec
 from rpa.optimizer import PortfolioPlan
 
-from rpa.config import VERIFICATION_VERSION
-
 
 @dataclass
 class VerificationResult:
-    rows: List[Dict]                 # per-action verification
-    batch_metrics: Dict
+    rows: list[dict]  # per-action verification
+    batch_metrics: dict
     passed: bool
     version: str = VERIFICATION_VERSION
 
@@ -44,22 +43,21 @@ class VerificationLayer:
         self,
         plan: PortfolioPlan,
         execution: ExecutionResult,
-        actions: List[ActionSpec],
+        actions: list[ActionSpec],
     ) -> VerificationResult:
         exec_by_txn = {r["transaction_id"]: r for r in execution.executions}
 
-        rows: List[Dict] = []
+        rows: list[dict] = []
         all_ok = True
         for i, txn in enumerate(plan.transaction_ids):
             planned = plan.actions[i]
             planned_index = next(
-                (j for j, a in enumerate(actions) if a.action_id == planned.action_id), -1)
-            plan_ev = (
-                plan.net_ev_per_txn[i]
-                if i < len(plan.net_ev_per_txn) else None
+                (j for j, a in enumerate(actions) if a.action_id == planned.action_id),
+                -1,
             )
+            plan_ev = plan.net_ev_per_txn[i] if i < len(plan.net_ev_per_txn) else None
             exec_row = exec_by_txn.get(txn)
-            row: Dict = {
+            row: dict = {
                 "transaction_id": txn,
                 "planned_action_id": planned.action_id,
                 "planned_action_type": planned.action_type,
@@ -90,7 +88,9 @@ class VerificationLayer:
             row["blocked"] = exec_row.get("status") == "blocked"
             row["recovered_amount"] = float(exec_row.get("recovered_amount", 0.0))
             row["recovery_cost"] = float(exec_row.get("recovery_cost", 0.0))
-            row["net_recovered_amount"] = float(exec_row.get("net_recovered_amount", 0.0))
+            row["net_recovered_amount"] = float(
+                exec_row.get("net_recovered_amount", 0.0)
+            )
             # Cross-check planned vs executed action.
             if exec_row.get("action_id") != planned.action_id:
                 row["verified"] = False

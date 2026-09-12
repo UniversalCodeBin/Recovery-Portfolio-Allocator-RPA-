@@ -10,7 +10,6 @@ from expected_value import (
     expected_net_recovery,
     expected_value_matrix,
 )
-from actions import ResourceVector
 
 
 def test_expected_net_recovery_basic():
@@ -67,9 +66,7 @@ def test_ev_ratio_matrix_no_resource_actions_use_ev():
 def test_deterministic_matrices():
     amounts = [100.0, 200.0, 300.0]
     actions = [Action.NO_INTERVENTION, Action.CUSTOMER_MESSAGE]
-    prob = {
-        a: np.random.default_rng(0).random(3) for a in actions
-    }
+    prob = {a: np.random.default_rng(0).random(3) for a in actions}
     m1 = expected_value_matrix(amounts, prob, actions)
     m2 = expected_value_matrix(amounts, prob, actions)
     np.testing.assert_allclose(m1, m2)

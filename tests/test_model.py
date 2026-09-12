@@ -3,9 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from config import Action, PROB_EPS
-from model import ActionAwareLogistic
+from config import PROB_EPS, Action
 from data_generation import SyntheticDataGenerator
+from model import ActionAwareLogistic
 
 
 @pytest.fixture()
@@ -22,7 +22,7 @@ def model_and_data():
 def test_predictions_in_unit_interval(model_and_data):
     m, te = model_and_data
     probs = m.predict_proba(te)
-    for action, p in probs.items():
+    for p in probs.values():
         assert p.shape == (len(te),)
         assert np.all(p >= PROB_EPS)
         assert np.all(p <= 1.0 - PROB_EPS)

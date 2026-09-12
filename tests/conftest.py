@@ -1,32 +1,30 @@
 """Shared pytest fixtures for the RPA experiment test suite."""
-from __future__ import annotations
 
-from typing import Dict, List
+from __future__ import annotations
 
 import numpy as np
 import pytest
 
 from actions import Resource, capacity_dict_from_scenario
-from config import Action, GROUND_TRUTH, SCENARIOS
+from config import SCENARIOS, Action
 from data_generation import SyntheticDataGenerator
 from model import ActionAwareLogistic
-from strategies import ACTIONS_LIST
 
 
 @pytest.fixture(scope="session")
-def small_pool() -> List:
+def small_pool() -> list:
     gen = SyntheticDataGenerator(42)
     return gen.generate(60, prefix="test_pool")
 
 
 @pytest.fixture(scope="session")
-def train_txns() -> List:
+def train_txns() -> list:
     gen = SyntheticDataGenerator(7)
     return gen.generate(120, prefix="train")
 
 
 @pytest.fixture(scope="session")
-def val_txns() -> List:
+def val_txns() -> list:
     gen = SyntheticDataGenerator(8)
     return gen.generate(60, prefix="val")
 
@@ -39,7 +37,7 @@ def frozen_model(train_txns, val_txns) -> ActionAwareLogistic:
 
 
 @pytest.fixture()
-def proba_lookup(frozen_model, small_pool) -> Dict[Action, np.ndarray]:
+def proba_lookup(frozen_model, small_pool) -> dict[Action, np.ndarray]:
     return frozen_model.predict_proba(small_pool)
 
 
@@ -48,9 +46,9 @@ def capacity_for(
     human: int | None = None,
     messaging: int | None = None,
     retry: int | None = None,
-) -> Dict[Resource, float]:
+) -> dict[Resource, float]:
     """Build a capacity dict on demand (None => unlimited)."""
-    caps: Dict[Resource, float] = {}
+    caps: dict[Resource, float] = {}
     if incentive is not None:
         caps[Resource.INCENTIVE_BUDGET] = float(incentive)
     if human is not None:
@@ -62,5 +60,5 @@ def capacity_for(
     return caps
 
 
-def scenario_capacity(name: str) -> Dict[Resource, float]:
+def scenario_capacity(name: str) -> dict[Resource, float]:
     return capacity_dict_from_scenario(SCENARIOS[name])

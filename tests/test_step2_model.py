@@ -8,12 +8,11 @@ Validates:
 * the trained model + preprocessor can be saved and reloaded and produce
   identical predictions.
 """
+
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import pytest
-from sklearn.linear_model import LogisticRegression
 
 from ml.calibration import (
     evaluate_calibration,
@@ -22,11 +21,15 @@ from ml.calibration import (
     predict_with_calibrator,
 )
 from ml.config import FeatureFlags
-from ml.data_io import build_labeled_pairs, load_step2_data, assert_customer_split_isolation
+from ml.data_io import (
+    assert_customer_split_isolation,
+    build_labeled_pairs,
+    load_step2_data,
+)
 from ml.features import build_step2_feature_frame
 from ml.features.pipeline import resolve_feature_spec
 from ml.model import TrainedLogisticModel, train_logistic
-from ml.preprocessing import FittedPreprocessor, fit_preprocessor
+from ml.preprocessing import fit_preprocessor
 
 
 # ---------------------------------------------------------------------------
@@ -43,17 +46,22 @@ def datasets():
 def train_frame(datasets):
     flags = FeatureFlags()
     feat = build_step2_feature_frame(
-        datasets.splits["train"], datasets.customers,
+        datasets.splits["train"],
+        datasets.customers,
         datasets.recovery_actions,
-        datasets.recovery_actions["action_id"].tolist(), flags,
+        datasets.recovery_actions["action_id"].tolist(),
+        flags,
     )
     labels = build_labeled_pairs(
-        datasets.splits["train"], datasets.action_outcomes,
-        datasets.recovery_actions, seed=0,
+        datasets.splits["train"],
+        datasets.action_outcomes,
+        datasets.recovery_actions,
+        seed=0,
     )
     feat = feat.merge(
         labels[["transaction_id", "action_id", "recovered"]],
-        on=["transaction_id", "action_id"], how="left",
+        on=["transaction_id", "action_id"],
+        how="left",
     )
     return feat
 
@@ -62,17 +70,22 @@ def train_frame(datasets):
 def val_frame(datasets):
     flags = FeatureFlags()
     feat = build_step2_feature_frame(
-        datasets.splits["val"], datasets.customers,
+        datasets.splits["val"],
+        datasets.customers,
         datasets.recovery_actions,
-        datasets.recovery_actions["action_id"].tolist(), flags,
+        datasets.recovery_actions["action_id"].tolist(),
+        flags,
     )
     labels = build_labeled_pairs(
-        datasets.splits["val"], datasets.action_outcomes,
-        datasets.recovery_actions, seed=0,
+        datasets.splits["val"],
+        datasets.action_outcomes,
+        datasets.recovery_actions,
+        seed=0,
     )
     feat = feat.merge(
         labels[["transaction_id", "action_id", "recovered"]],
-        on=["transaction_id", "action_id"], how="left",
+        on=["transaction_id", "action_id"],
+        how="left",
     )
     return feat
 
@@ -87,17 +100,30 @@ def fitted(train_frame, val_frame):
     model = train_logistic(X_train, y_train, seed=1234)
     cal = evaluate_calibration(model, X_val, y_val)
     chosen_name = min(cal.keys(), key=lambda m: cal[m].val_brier_calibrated)
-    return pp, model, cal[chosen_name], train_frame, val_frame, X_train, X_val, y_train, y_val
+    return (
+        pp,
+        model,
+        cal[chosen_name],
+        train_frame,
+        val_frame,
+        X_train,
+        X_val,
+        y_train,
+        y_val,
+    )
 
 
 # ---------------------------------------------------------------------------
 # 1. Probabilities in [0, 1]
 # ---------------------------------------------------------------------------
 def test_probabilities_in_unit_interval(fitted):
-    pp, model, chosen, train_frame, val_frame, *_ = fitted
+    pp, model, chosen, _train_frame, val_frame, *_ = fitted
     trained = TrainedLogisticModel(
-        model=model, preprocessor=pp, calibrator=chosen.calibrator,
-        model_identifier="test-v1", chosen_calibration=chosen.method,
+        model=model,
+        preprocessor=pp,
+        calibrator=chosen.calibrator,
+        model_identifier="test-v1",
+        chosen_calibration=chosen.method,
     )
     p = trained.predict_proba(val_frame)
     assert (p >= 0).all() and (p <= 1).all()
@@ -107,10 +133,13 @@ def test_probabilities_in_unit_interval(fitted):
 # 2. Model can score every candidate action
 # ---------------------------------------------------------------------------
 def test_scores_every_action(fitted, datasets):
-    pp, model, chosen, train_frame, val_frame, *_ = fitted
+    pp, model, chosen, _train_frame, val_frame, *_ = fitted
     trained = TrainedLogisticModel(
-        model=model, preprocessor=pp, calibrator=chosen.calibrator,
-        model_identifier="test-v1", chosen_calibration=chosen.method,
+        model=model,
+        preprocessor=pp,
+        calibrator=chosen.calibrator,
+        model_identifier="test-v1",
+        chosen_calibration=chosen.method,
     )
     p = trained.predict_proba(val_frame)
     # Per-action: every action appears.
@@ -124,14 +153,20 @@ def test_scores_every_action(fitted, datasets):
 # 3. Deterministic under a fixed seed
 # ---------------------------------------------------------------------------
 def test_deterministic_predictions(fitted):
-    pp, model, chosen, train_frame, val_frame, *_ = fitted
+    pp, model, chosen, _train_frame, val_frame, *_ = fitted
     trained1 = TrainedLogisticModel(
-        model=model, preprocessor=pp, calibrator=chosen.calibrator,
-        model_identifier="test-v1", chosen_calibration=chosen.method,
+        model=model,
+        preprocessor=pp,
+        calibrator=chosen.calibrator,
+        model_identifier="test-v1",
+        chosen_calibration=chosen.method,
     )
     trained2 = TrainedLogisticModel(
-        model=model, preprocessor=pp, calibrator=chosen.calibrator,
-        model_identifier="test-v1", chosen_calibration=chosen.method,
+        model=model,
+        preprocessor=pp,
+        calibrator=chosen.calibrator,
+        model_identifier="test-v1",
+        chosen_calibration=chosen.method,
     )
     p1 = trained1.predict_proba(val_frame)
     p2 = trained2.predict_proba(val_frame)
@@ -157,9 +192,12 @@ def test_calibration_does_not_harm_brier(fitted):
 # ---------------------------------------------------------------------------
 def test_model_save_reload(fitted, tmp_path):
     from ml.versioning import artifact_paths
-    pp, model, chosen, train_frame, val_frame, *_ = fitted
+
+    pp, model, chosen, _train_frame, val_frame, *_ = fitted
     trained = TrainedLogisticModel(
-        model=model, preprocessor=pp, calibrator=chosen.calibrator,
+        model=model,
+        preprocessor=pp,
+        calibrator=chosen.calibrator,
         model_identifier="rpa-recovery-logreg-test-v1",
         chosen_calibration=chosen.method,
     )

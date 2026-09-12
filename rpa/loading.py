@@ -15,28 +15,27 @@ The live-scoring path calls the frozen model's ``predict_proba`` through the
 Step 2 feature pipeline so the backend can score arbitrary in-flight
 transactions without touching the DB.
 """
+
 from __future__ import annotations
 
 import pathlib
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from data_core.config import SPLITS_DIR, VALIDATED_DIR
 from data_core.io import read_frame
-
 from ml.config import FeatureFlags
 from ml.features import build_step2_feature_frame
 from ml.model import TrainedLogisticModel
-
 from rpa.config import (
     DEFAULT_MODEL_IDENTIFIER,
     MODEL_DIR,
     MODEL_FEATURE_FLAGS,
     PREDICTIONS_DIR,
 )
+
 
 # ---------------------------------------------------------------------------
 # Action spec (data-driven economics + resource consumption)
@@ -47,8 +46,8 @@ class ActionSpec:
 
     action_id: str
     action_type: str
-    action_cost: float                 # rupee handling cost
-    resource_requirements: Dict[str, float]  # e.g. {"incentive_budget": 50.0, ...}
+    action_cost: float  # rupee handling cost
+    resource_requirements: dict[str, float]  # e.g. {"incentive_budget": 50.0, ...}
     enabled: bool = True
 
     @property
@@ -62,17 +61,21 @@ class ActionSpec:
 # ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
-def load_actions(path: pathlib.Path = VALIDATED_DIR / "recovery_actions.csv") -> List[ActionSpec]:
+def load_actions(
+    path: pathlib.Path = VALIDATED_DIR / "recovery_actions.csv",
+) -> list[ActionSpec]:
     df = read_frame(path, "recovery_actions")
-    specs: List[ActionSpec] = []
+    specs: list[ActionSpec] = []
     for row in df.to_dict(orient="records"):
-        specs.append(ActionSpec(
-            action_id=row["action_id"],
-            action_type=row["action_type"],
-            action_cost=float(row["action_cost"]),
-            resource_requirements=dict(row.get("resource_requirements") or {}),
-            enabled=bool(row.get("enabled", True)),
-        ))
+        specs.append(
+            ActionSpec(
+                action_id=row["action_id"],
+                action_type=row["action_type"],
+                action_cost=float(row["action_cost"]),
+                resource_requirements=dict(row.get("resource_requirements") or {}),
+                enabled=bool(row.get("enabled", True)),
+            )
+        )
     return specs
 
 
@@ -91,8 +94,9 @@ def load_customers() -> pd.DataFrame:
     return read_frame(p, "customers")
 
 
-def load_predictions_csv(model_id: str = DEFAULT_MODEL_IDENTIFIER,
-                         split: str = "demo") -> pd.DataFrame:
+def load_predictions_csv(
+    model_id: str = DEFAULT_MODEL_IDENTIFIER, split: str = "demo"
+) -> pd.DataFrame:
     """Load Step 2 prediction CSV for a split."""
     p = PREDICTIONS_DIR / f"predictions_{split}_{model_id}.csv"
     if not p.exists():
@@ -106,10 +110,12 @@ def load_predictions_csv(model_id: str = DEFAULT_MODEL_IDENTIFIER,
 # ---------------------------------------------------------------------------
 # Frozen-model live scoring (prediction service back-end)
 # ---------------------------------------------------------------------------
-def load_frozen_model(model_id: str = DEFAULT_MODEL_IDENTIFIER,
-                      model_dir: pathlib.Path = MODEL_DIR) -> TrainedLogisticModel:
+def load_frozen_model(
+    model_id: str = DEFAULT_MODEL_IDENTIFIER, model_dir: pathlib.Path = MODEL_DIR
+) -> TrainedLogisticModel:
     """Load the frozen Step 2 model artifact. Raises if not found."""
     from ml.versioning import artifact_paths
+
     paths = artifact_paths(model_id, base_dir=MODEL_DIR.parent)
     if not paths["model_dir"].exists():
         raise FileNotFoundError(
@@ -122,7 +128,7 @@ def live_score(
     model: TrainedLogisticModel,
     transactions: pd.DataFrame,
     customers: pd.DataFrame,
-    actions: List[ActionSpec],
+    actions: list[ActionSpec],
     flags: FeatureFlags = MODEL_FEATURE_FLAGS,
 ) -> pd.DataFrame:
     """Score every (txn, action) with the frozen model, return predictions.
@@ -135,29 +141,37 @@ def live_score(
         transactions, customers, _actions_frame(actions), action_ids, flags
     )
     p = model.predict_proba(feat)
-    return pd.DataFrame({
-        "transaction_id": feat["transaction_id"].tolist(),
-        "action_id": feat["action_id"].tolist(),
-        "predicted_recovery_probability": p.astype(float),
-        "model_identifier": model.model_identifier,
-    })
+    return pd.DataFrame(
+        {
+            "transaction_id": feat["transaction_id"].tolist(),
+            "action_id": feat["action_id"].tolist(),
+            "predicted_recovery_probability": p.astype(float),
+            "model_identifier": model.model_identifier,
+        }
+    )
 
 
-def _actions_frame(actions: List[ActionSpec]) -> pd.DataFrame:
+def _actions_frame(actions: list[ActionSpec]) -> pd.DataFrame:
     import json
-    return pd.DataFrame([{
-        "action_id": a.action_id,
-        "action_type": a.action_type,
-        "action_cost": a.action_cost,
-        "resource_requirements": json.dumps(a.resource_requirements),
-        "enabled": a.enabled,
-    } for a in actions])
+
+    return pd.DataFrame(
+        [
+            {
+                "action_id": a.action_id,
+                "action_type": a.action_type,
+                "action_cost": a.action_cost,
+                "resource_requirements": json.dumps(a.resource_requirements),
+                "enabled": a.enabled,
+            }
+            for a in actions
+        ]
+    )
 
 
 def predictions_matrix(
     predictions: pd.DataFrame,
     transactions: pd.DataFrame,
-    actions: List[ActionSpec],
+    actions: list[ActionSpec],
 ) -> np.ndarray:
     """Predictions -> (n_transactions, n_actions) probability matrix.
 
@@ -179,11 +193,11 @@ def predictions_matrix(
 
 __all__ = [
     "ActionSpec",
-    "load_actions",
-    "load_transactions",
-    "load_customers",
-    "load_predictions_csv",
-    "load_frozen_model",
     "live_score",
+    "load_actions",
+    "load_customers",
+    "load_frozen_model",
+    "load_predictions_csv",
+    "load_transactions",
     "predictions_matrix",
 ]

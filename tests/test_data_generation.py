@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
+from config import Action
 from data_generation import (
     SyntheticDataGenerator,
     build_demo_pool,
@@ -10,7 +10,6 @@ from data_generation import (
     sample_batch,
     split_dataset,
 )
-from config import Action, GROUND_TRUTH
 
 
 def test_generation_reproducible_same_seed():
