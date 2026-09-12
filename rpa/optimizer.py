@@ -53,6 +53,7 @@ class PortfolioPlan:
     version: str = OPTIMIZER_VERSION
     status: str = "ok"
     solve_time_seconds: Optional[float] = None
+    solver_status: Optional[str] = None
 
     def to_records(self) -> List[Dict]:
         out = []
@@ -143,8 +144,9 @@ class Optimizer:
 
         solver.SetTimeLimit(int(self.config.time_limit_seconds * 1000))
         status = solver.Solve()
-        optimal = status in (pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE)
-        if not optimal:
+        optimal = status == pywraplp.Solver.OPTIMAL
+        approved_feasible = status == pywraplp.Solver.FEASIBLE and self.config.allow_feasible_solution
+        if not (optimal or approved_feasible):
             return PortfolioPlan(
                 transaction_ids=transaction_ids,
                 actions=[actions[no_op_idx]] * n,
@@ -153,7 +155,8 @@ class Optimizer:
                 resource_used={k: 0.0 for k in RESOURCE_KEYS},
                 capacities=dict(capacity),
                 name="rpa_optimizer",
-                status=f"infeasible:{status}",
+                status=f"solver_not_approved:{status}",
+                solver_status=str(status),
             )
 
         chosen = np.zeros(n, dtype=int)
@@ -180,8 +183,9 @@ class Optimizer:
             resource_used=used,
             capacities=dict(capacity),
             name="rpa_optimizer",
-            status="optimal" if status == pywraplp.Solver.OPTIMAL else f"status={status}",
+            status="optimal" if optimal else "feasible_policy_approved",
             solve_time_seconds=float(solver.WallTime() / 1000.0) if solver.WallTime() else None,
+            solver_status=str(status),
         )
 
 

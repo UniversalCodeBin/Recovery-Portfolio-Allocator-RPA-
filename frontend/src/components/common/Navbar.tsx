@@ -49,14 +49,8 @@ export const Navbar: React.FC<Props> = ({
           <div className="flex items-center gap-2">
             <h1 className="text-sm md:text-base font-bold text-white tracking-tight flex items-center gap-1.5">
               Recovery Portfolio Allocator
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                Track 03
-              </span>
             </h1>
           </div>
-          <p className="text-[11px] text-slate-400 font-normal">
-            Razorpay AI Buildathon • Revenue Recovery Optimization
-          </p>
         </div>
       </div>
 

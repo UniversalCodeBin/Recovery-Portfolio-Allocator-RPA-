@@ -101,7 +101,7 @@ cd frontend && npm run dev
 | `rpa/` | Step 3: backend decision layer (FastAPI, orchestrator, policy, optimizer, simulator, audit) |
 | `frontend/` | Step 4: React dashboard |
 | `database/` | PostgreSQL schema + migrations |
-| `tests/` | 185 backend tests (184 passed, 1 skipped) |
+| `tests/` | 188 tests collected — 187 passed, 1 skipped |
 | `scripts/` | Step 1-3 run scripts |
 
 ---
@@ -518,7 +518,7 @@ Open browser at `http://localhost:5173`.
 ### Testing
 | Technology | Where Used |
 |---|---|
-| pytest 8.0+ | `tests/` — 185 tests |
+| pytest 8.0+ | `tests/` — 188 collected, 187 passed, 1 skipped |
 | pytest-cov 4.1+ | Coverage |
 | FastAPI TestClient | `test_step3_api.py` |
 | Playwright 1.63+ | `frontend/tests/example.spec.ts` (boilerplate only) |
@@ -528,7 +528,7 @@ Open browser at `http://localhost:5173`.
 ## 10. Testing
 
 ### Total Tests
-**185 tests collected. 184 passed, 1 skipped in 11.40s.**
+**188 tests collected — 187 passed, 1 skipped.**
 
 ### Backend Tests
 - `test_actions.py` — 7 tests
@@ -628,7 +628,7 @@ razorpay/
 │   └── audit.py                 # Audit trail
 ├── frontend/                    # Step 4: React dashboard
 ├── database/                    # PostgreSQL schema + migrations
-├── tests/                       # 185 tests
+├── tests/                       # 188 tests collected
 ├── scripts/                     # Run scripts
 ├── artifacts/                   # Model + predictions (gitignored)
 ├── reports/                     # Generated reports (gitignored)

@@ -18,13 +18,17 @@ move real money.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
+import uuid
 from math import isfinite
 from typing import Any, Dict, List, Literal, Optional
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from rpa.config import (
@@ -49,7 +53,10 @@ from rpa.orchestrator import (
     load_batch_result,
 )
 from rpa.prediction_service import PredictionService
+from rpa.settings import get_settings
 from rpa.strategies import STRATEGY_NAMES
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="RPA Backend API (Step 3)",
@@ -61,6 +68,13 @@ app = FastAPI(
     ),
 )
 
+# Mount production v1 router
+from rpa.api_v1 import router as v1_router
+app.include_router(v1_router)
+
+# ---------------------------------------------------------------------------
+# CORS — read from settings, fall back to safe defaults
+# ---------------------------------------------------------------------------
 default_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -69,14 +83,16 @@ default_origins = [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
 ]
-env_origins = os.getenv("CORS_ORIGINS")
-allowed_origins = (
-    [o.strip() for o in env_origins.split(",") if o.strip()]
-    if env_origins
-    else default_origins
-)
-# Credentialed CORS must never be wildcarded.  Ignore an unsafe deployment
-# setting rather than granting every origin access to browser credentials.
+try:
+    settings = get_settings()
+    allowed_origins = list(settings.cors_origins) if settings.cors_origins else default_origins
+except Exception:
+    env_origins = os.getenv("CORS_ORIGINS")
+    allowed_origins = (
+        [o.strip() for o in env_origins.split(",") if o.strip()]
+        if env_origins
+        else default_origins
+    )
 allowed_origins = [origin for origin in allowed_origins if origin != "*"]
 
 app.add_middleware(
@@ -86,6 +102,89 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Request ID middleware
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def add_request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = (time.monotonic() - start) * 1000
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Response-Time-Ms"] = f"{duration_ms:.1f}"
+    logger.info(
+        "%s %s %d %.1fms rid=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+        request_id,
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Global exception handlers
+# ---------------------------------------------------------------------------
+class APIError(Exception):
+    def __init__(self, code: str, message: str, status_code: int = 400, field: str | None = None):
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        self.field = field
+        super().__init__(message)
+
+
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError):
+    request_id = getattr(request.state, "request_id", "unknown")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+                "field": exc.field,
+            },
+            "request_id": request_id,
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    request_id = getattr(request.state, "request_id", "unknown")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": f"HTTP_{exc.status_code}",
+                "message": str(exc.detail),
+            },
+            "request_id": request_id,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.exception("Unhandled exception rid=%s", request_id)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "An internal error occurred",
+            },
+            "request_id": request_id,
+        },
+    )
+
 
 # ---------------------------------------------------------------------------
 # Request/response models
@@ -138,7 +237,6 @@ class BatchRequest(_ValidatedRequest):
         None, description="Shared resource caps; defaults to Step 1 values")
     strategies: Optional[List[str]] = Field(
         None, description="Strategies to run (default all except rule_based)")
-    # Subset of transactions to run on (by id). None => whole split.
     transaction_ids: Optional[List[str]] = Field(None)
 
 
@@ -178,15 +276,18 @@ def _load_context(split: str = "demo", transaction_ids: Optional[List[str]] = No
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Health & metadata
 # ---------------------------------------------------------------------------
 @app.get("/health")
 def health() -> Dict:
+    settings = get_settings()
     return {
         "status": "ok",
         "service": "rpa-backend",
         "step": 3,
-        "simulation_only": True,
+        "version": "0.3.0",
+        "mode": settings.mode,
+        "simulation_only": settings.mode == "demo",
     }
 
 
@@ -210,6 +311,9 @@ def _predictions_available(model_id: str) -> bool:
     return any(PREDICTIONS_DIR.glob(f"predictions_*_{model_id}.csv"))
 
 
+# ---------------------------------------------------------------------------
+# Recovery endpoints
+# ---------------------------------------------------------------------------
 @app.post("/recovery/batch", response_model=Dict)
 def run_batch(req: BatchRequest) -> Dict:
     try:
@@ -335,6 +439,12 @@ def execute(req: ExecuteRequest) -> Dict:
     """Execute an approved plan under simulation. SIMULATION ONLY."""
     if req.strategy not in STRATEGY_NAMES:
         raise HTTPException(status_code=400, detail=f"unknown strategy: {req.strategy}")
+    settings = get_settings()
+    if settings.production:
+        raise HTTPException(
+            status_code=400,
+            detail="Real execution is not available through this endpoint. Use /v1/recovery/jobs for production execution.",
+        )
     try:
         transactions, customers, actions = _load_context(req.split)
         limits = req.resource_limits or default_resource_limits()
@@ -365,6 +475,9 @@ def execute(req: ExecuteRequest) -> Dict:
         raise HTTPException(status_code=500, detail=f"execute failed: {exc}")
 
 
+# ---------------------------------------------------------------------------
+# Read endpoints
+# ---------------------------------------------------------------------------
 @app.get("/recovery/plan/{batch_id}")
 def get_plan(batch_id: str) -> Dict:
     return _load_ok(batch_id, lambda d: d.get("plans", {}))
@@ -408,7 +521,7 @@ def _load_ok(batch_id: str, selector) -> Dict:
 
 
 # ---------------------------------------------------------------------------
-# Version info endpoint (helpful for evaluator)
+# Version info endpoint
 # ---------------------------------------------------------------------------
 @app.get("/versions")
 def versions() -> Dict:
@@ -528,7 +641,6 @@ def get_explanation(
             ))
         exp = trail.explain_selection(transaction_id, strategy=strategy)
         if exp.get("decision") is None and exp.get("prediction") is None:
-            # Check if transaction exists in batch
             result_file = RUNS_DIR / batch_id / "result.json"
             if result_file.exists():
                 res_data = json.loads(result_file.read_text(encoding="utf-8"))
@@ -542,6 +654,22 @@ def get_explanation(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"failed to explain transaction: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Production auth endpoints (only available in production mode)
+# ---------------------------------------------------------------------------
+@app.post("/auth/token")
+async def login_token(req: Dict[str, str]) -> Dict:
+    """Issue an access token. In demo mode, returns a synthetic token."""
+    settings = get_settings()
+    if settings.mode == "demo":
+        return {
+            "access_token": "demo-token",
+            "token_type": "Bearer",
+            "expires_in": settings.access_token_ttl_seconds,
+        }
+    raise HTTPException(status_code=501, detail="Production login requires database. Use /v1/auth/token.")
 
 
 __all__ = ["app"]

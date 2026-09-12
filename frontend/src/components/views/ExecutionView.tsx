@@ -133,7 +133,7 @@ export const ExecutionView: React.FC<Props> = ({ batch, onExecute, isLoading }) 
           value={`${metrics?.n_successful ?? 0} / ${metrics?.n_failed ?? 0}`}
           subtitle={`Blocked by policy: ${metrics?.n_blocked ?? 0}`}
           icon={<XCircle className="w-5 h-5 text-rose-400" />}
-          badge={metrics?.all_verified ? '100% Verified' : 'Reconciled'}
+          badge={metrics?.all_verified ? 'Reconciled' : 'Pending'}
           badgeColor={metrics?.all_verified ? 'emerald' : 'slate'}
           accent="emerald"
         />

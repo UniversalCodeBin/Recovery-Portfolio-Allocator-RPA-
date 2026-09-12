@@ -70,14 +70,17 @@ export const OverviewView: React.FC<Props> = ({
   const rpaMetrics: StrategyMetric | undefined =
     batch.verifications?.['rpa_optimizer']?.batch_metrics ||
     batch.summary?.strategy_metrics?.['rpa_optimizer'];
+  const hasRpaRun = !!rpaMetrics;
 
   const greedyMetrics: StrategyMetric | undefined =
     batch.verifications?.['ev_greedy']?.batch_metrics ||
     batch.summary?.strategy_metrics?.['ev_greedy'];
+  const hasGreedyRun = !!greedyMetrics;
 
   const noActionMetrics: StrategyMetric | undefined =
     batch.verifications?.['no_action']?.batch_metrics ||
     batch.summary?.strategy_metrics?.['no_action'];
+  const hasNoActionRun = !!noActionMetrics;
 
   const nBlocked =
     batch.summary?.n_blocked_candidates ??
@@ -183,14 +186,14 @@ export const OverviewView: React.FC<Props> = ({
                   <td className="py-2.5 px-3 font-semibold text-slate-300">No Action</td>
                   <td className="py-2.5 px-3 text-slate-400 font-sans">No intervention (zero cost)</td>
                   <td className="py-2.5 px-3 text-right text-slate-200">
-                    ₹{(noActionMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasNoActionRun ? `₹${(noActionMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-200">
-                    ₹{(noActionMetrics?.net_recovered_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasNoActionRun ? `₹${(noActionMetrics?.net_recovered_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-500">₹0</td>
                   <td className="py-2.5 px-3 text-center">
-                    <StatusBadge status="Baseline" size="sm" />
+                    <StatusBadge status={hasNoActionRun ? "Baseline" : "Not Run"} size="sm" />
                   </td>
                 </tr>
 
@@ -199,16 +202,16 @@ export const OverviewView: React.FC<Props> = ({
                   <td className="py-2.5 px-3 font-semibold text-slate-300">EV-Greedy</td>
                   <td className="py-2.5 px-3 text-slate-400 font-sans">Best EV/resource per txn</td>
                   <td className="py-2.5 px-3 text-right text-slate-200">
-                    ₹{(greedyMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasGreedyRun ? `₹${(greedyMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right text-slate-200">
-                    ₹{(greedyMetrics?.net_recovered_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasGreedyRun ? `₹${(greedyMetrics?.net_recovered_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right text-amber-400">
-                    ₹{(greedyMetrics?.cost_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasGreedyRun ? `₹${(greedyMetrics?.cost_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-center">
-                    <StatusBadge status="Comparator" size="sm" />
+                    <StatusBadge status={hasGreedyRun ? "Comparator" : "Not Run"} size="sm" />
                   </td>
                 </tr>
 
@@ -220,16 +223,16 @@ export const OverviewView: React.FC<Props> = ({
                   </td>
                   <td className="py-2.5 px-3 text-blue-200/90 font-sans font-normal">Exact ILP (OR-Tools)</td>
                   <td className="py-2.5 px-3 text-right text-blue-300 font-bold">
-                    ₹{(rpaMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasRpaRun ? `₹${(rpaMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right text-emerald-400 font-bold">
-                    ₹{(rpaMetrics?.net_recovered_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasRpaRun ? `₹${(rpaMetrics?.net_recovered_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-right text-amber-400">
-                    ₹{(rpaMetrics?.cost_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    {hasRpaRun ? `₹${(rpaMetrics?.cost_total ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-center">
-                    <StatusBadge status="Optimal" size="sm" />
+                    <StatusBadge status={hasRpaRun ? "Optimal" : "Not Run"} size="sm" />
                   </td>
                 </tr>
               </tbody>
@@ -238,7 +241,7 @@ export const OverviewView: React.FC<Props> = ({
 
           <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
             <span>
-              Batch Seed: <strong className="text-slate-300 font-mono">{rpaMetrics?.plan_name ? 0 : 0}</strong> • Verified reconciliations: <strong className="text-emerald-400 font-mono">100%</strong>
+              Batch Seed: <strong className="text-slate-300 font-mono">{rpaMetrics?.plan_name ? 0 : 0}</strong> • Reconciliation: <strong className="text-emerald-400 font-mono">{hasRpaRun ? 'PASS' : '—'}</strong>
             </span>
             <button
               onClick={() => onNavigate('plan')}

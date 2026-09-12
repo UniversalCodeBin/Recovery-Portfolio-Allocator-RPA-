@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List
+from urllib.parse import quote
 
 from config import (
     ACTION_SPECS,
@@ -196,17 +197,24 @@ class ValidationThresholds:
 
 
 # ---------------------------------------------------------------------------
-# PostgreSQL connection (env-driven, no hard-coded secrets)
-# ---------------------------------------------------------------------------
+# PostgreSQL connection (env-driven, no hard-coded secrets). Production
+# deployments should set RPA_DATABASE_URL; legacy RPA_DB_* values remain for
+# local data-pipeline use.
 DB_HOST: str = os.environ.get("RPA_DB_HOST", "localhost")
 DB_PORT: str = os.environ.get("RPA_DB_PORT", "5432")
 DB_NAME: str = os.environ.get("RPA_DB_NAME", "rpa")
 DB_USER: str = os.environ.get("RPA_DB_USER", "rpa")
 DB_PASSWORD: str = os.environ.get("RPA_DB_PASSWORD", "")
 DB_SCHEMA: str = os.environ.get("RPA_DB_SCHEMA", "rpa")
+DATABASE_URL: str | None = os.environ.get("RPA_DATABASE_URL")
+DB_APPLICATION_NAME: str = os.environ.get("RPA_DB_APPLICATION_NAME", "rpa-data-pipeline")
 
 
 def database_url() -> str:
-    pw = DB_PASSWORD
-    auth = f"{DB_USER}:{pw}" if pw else f"{DB_USER}"
+    if DATABASE_URL:
+        return DATABASE_URL
+    password = quote(DB_PASSWORD, safe="")
+    user = quote(DB_USER, safe="")
+    auth = f"{user}:{password}" if DB_PASSWORD else user
     return f"postgresql://{auth}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+

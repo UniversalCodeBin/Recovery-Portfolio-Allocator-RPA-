@@ -97,6 +97,9 @@ class PolicyConfig:
 class OptimizerConfig:
     solver: str = "CBC"
     time_limit_seconds: float = 30.0
+    # A non-optimal CBC feasible incumbent is not executable by default. A
+    # production policy may explicitly opt into it after risk review.
+    allow_feasible_solution: bool = False
     # One-action-per-transaction is always enforced.
     enforce_one_action_per_txn: bool = True
     # A no-op action is always available (fallback) so the problem is feasible.

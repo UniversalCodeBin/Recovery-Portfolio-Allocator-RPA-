@@ -49,7 +49,7 @@ export const ResourceMeter: React.FC<Props> = ({
 
       <div className="flex items-center justify-between text-xs font-mono text-slate-400 pt-0.5">
         <span>
-          Consumed: <strong className="text-slate-200">{consumed.toLocaleString()}</strong> / {capacity.toLocaleString()} {unit}
+          Planned: <strong className="text-slate-200">{consumed.toLocaleString()}</strong> / {capacity.toLocaleString()} {unit}
         </span>
         <span className="text-slate-500">
           Remaining: <span className="text-emerald-400 font-medium">{remaining.toLocaleString()}</span>

@@ -1,0 +1,62 @@
+# Docker Compose for RPA Backend
+# Development: docker-compose up
+# Production: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: rpa
+      POSTGRES_USER: rpa
+      POSTGRES_PASSWORD: ${RPA_DB_PASSWORD:-change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rpa -d rpa"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RPA Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      RPA_MODE: ${RPA_MODE:-demo}
+      RPA_DATABASE_URL: postgresql://rpa:${RPA_DB_PASSWORD:-change_me}@db:5432/rpa
+      RPA_AUTH_SIGNING_KEY: ${RPA_AUTH_SIGNING_KEY:-change_me_to_a_32_character_minimum_secret}
+      RPA_WEBHOOK_SIGNING_SECRET: ${RPA_WEBHOOK_SIGNING_SECRET:-change_me_to_a_32_character_minimum_secret}
+      RPA_CORS_ORIGINS: ${RPA_CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./rpa_runs:/app/rpa_runs
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
