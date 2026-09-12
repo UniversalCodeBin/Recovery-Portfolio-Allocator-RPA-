@@ -109,11 +109,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Sanitize image name
+        id: sanitize
+        run: |
+          IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]' | sed 's/-$//')
+          echo "image_name=ghcr.io/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+      
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.sanitize.outputs.image_name }}
           tags: |
             type=ref,event=branch
             type=sha
