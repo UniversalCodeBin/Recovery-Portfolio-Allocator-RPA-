@@ -18,6 +18,7 @@ import { ResourceMeter } from '../common/ResourceMeter';
 import { StatusBadge } from '../common/StatusBadge';
 import { SimulationDisclaimer } from '../common/SimulationDisclaimer';
 import { ActiveTab } from '../common/Sidebar';
+import { formatStrategyAllocation } from '../../utils/allocation';
 
 interface Props {
   batch: FullBatchResult | null;
@@ -81,6 +82,10 @@ export const OverviewView: React.FC<Props> = ({
     batch.verifications?.['no_action']?.batch_metrics ||
     batch.summary?.strategy_metrics?.['no_action'];
   const hasNoActionRun = !!noActionMetrics;
+
+  const noActionAlloc = formatStrategyAllocation(batch.plans?.['no_action']);
+  const greedyAlloc = formatStrategyAllocation(batch.plans?.['ev_greedy']);
+  const rpaAlloc = formatStrategyAllocation(batch.plans?.['rpa_optimizer']);
 
   const nBlocked =
     batch.summary?.n_blocked_candidates ??
@@ -173,6 +178,7 @@ export const OverviewView: React.FC<Props> = ({
               <thead className="bg-slate-950/60 text-slate-400 font-mono border-b border-slate-800">
                 <tr>
                   <th className="py-2.5 px-3">Strategy</th>
+                  <th className="py-2.5 px-3">Allocation</th>
                   <th className="py-2.5 px-3">Selection Logic</th>
                   <th className="py-2.5 px-3 text-right">Expected Net EV</th>
                   <th className="py-2.5 px-3 text-right">Simulated Net</th>
@@ -184,6 +190,7 @@ export const OverviewView: React.FC<Props> = ({
                 {/* No Action */}
                 <tr className="hover:bg-slate-800/30">
                   <td className="py-2.5 px-3 font-semibold text-slate-300">No Action</td>
+                  <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">{noActionAlloc}</td>
                   <td className="py-2.5 px-3 text-slate-400 font-sans">No intervention (zero cost)</td>
                   <td className="py-2.5 px-3 text-right text-slate-200">
                     {hasNoActionRun ? `₹${(noActionMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
@@ -200,6 +207,7 @@ export const OverviewView: React.FC<Props> = ({
                 {/* EV Greedy */}
                 <tr className="hover:bg-slate-800/30">
                   <td className="py-2.5 px-3 font-semibold text-slate-300">EV-Greedy</td>
+                  <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">{greedyAlloc}</td>
                   <td className="py-2.5 px-3 text-slate-400 font-sans">Best EV/resource per txn</td>
                   <td className="py-2.5 px-3 text-right text-slate-200">
                     {hasGreedyRun ? `₹${(greedyMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
@@ -222,6 +230,7 @@ export const OverviewView: React.FC<Props> = ({
                     <span>RPA Optimizer</span>
                   </td>
                   <td className="py-2.5 px-3 text-blue-200/90 font-sans font-normal">Exact ILP (OR-Tools)</td>
+                  <td className="py-2.5 px-3 text-blue-200/80 font-sans font-normal text-[11px]">{rpaAlloc}</td>
                   <td className="py-2.5 px-3 text-right text-blue-300 font-bold">
                     {hasRpaRun ? `₹${(rpaMetrics?.planned_total_net_ev ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                   </td>

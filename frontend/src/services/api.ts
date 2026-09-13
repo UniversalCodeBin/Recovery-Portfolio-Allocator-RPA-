@@ -4,9 +4,11 @@ import {
   BatchListItem,
   BatchRequestPayload,
   BatchSummary,
+  CSVBatchResponse,
   DecisionExplanation,
   FullBatchResult,
   HealthResponse,
+  ResourceLimits,
   StrategyMetric,
   StrategyName,
   VersionInfo,
@@ -28,10 +30,14 @@ class ApiError extends Error {
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> || {}),
   };
+
+  // Don't set Content-Type for FormData — browser sets multipart/form-data with boundary
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   try {
     const controller = new AbortController();
@@ -80,6 +86,11 @@ export const api = {
 
   getActions: () => request<ActionsResponse>('/recovery/actions'),
 
+  deleteBatch: (batchId: string) =>
+    request<{ deleted: string }>(`/recovery/batch/${encodeURIComponent(batchId)}`, {
+      method: 'DELETE',
+    }),
+
   getBatches: () => request<BatchListItem[]>('/recovery/batches'),
 
   getBatch: (batchId: string) => request<FullBatchResult>(`/recovery/batch/${encodeURIComponent(batchId)}`),
@@ -123,7 +134,7 @@ export const api = {
       }),
     }),
 
-  executePlan: (payload: { split?: string; strategy?: StrategyName; batch_seed?: number; resource_limits?: any }) =>
+  executePlan: (payload: { split?: string; strategy?: StrategyName; batch_seed?: number; batch_id?: string; resource_limits?: any }) =>
     request<{
       batch_id: string;
       strategy: string;
@@ -136,6 +147,7 @@ export const api = {
         split: payload.split || 'demo',
         strategy: payload.strategy || 'rpa_optimizer',
         batch_seed: payload.batch_seed ?? 0,
+        batch_id: payload.batch_id,
         resource_limits: payload.resource_limits,
       }),
     }),
@@ -157,4 +169,23 @@ export const api = {
     request<DecisionExplanation>(
       `/recovery/explain/${encodeURIComponent(batchId)}/${encodeURIComponent(transactionId)}?strategy=${encodeURIComponent(strategy)}`
     ),
+
+  uploadCsvBatch: (
+    file: File,
+    params: { batch_seed?: number; resource_limits?: ResourceLimits; strategies?: string[] } = {}
+  ) => {
+    const url = new URL(`${BASE_URL}/recovery/batch/csv`);
+    if (params.batch_seed !== undefined) url.searchParams.set('batch_seed', String(params.batch_seed));
+    if (params.resource_limits) url.searchParams.set('resource_limits', JSON.stringify(params.resource_limits));
+    if (params.strategies) url.searchParams.set('strategies', JSON.stringify(params.strategies));
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return request<CSVBatchResponse>(url.pathname + url.search, {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    });
+  },
 };

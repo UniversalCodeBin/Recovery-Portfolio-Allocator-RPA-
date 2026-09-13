@@ -9,6 +9,7 @@ import {
   Settings,
   Info,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { BatchListItem, HealthResponse, VersionInfo } from '../../types/api';
 
@@ -18,6 +19,7 @@ interface Props {
   batches: BatchListItem[];
   currentBatchId: string | null;
   onSelectBatch: (batchId: string) => void;
+  onDeleteBatch: (batchId: string) => void;
   onOpenConfigModal: () => void;
   onLoadDemo: () => void;
   isLoading: boolean;
@@ -29,12 +31,14 @@ export const Navbar: React.FC<Props> = ({
   batches,
   currentBatchId,
   onSelectBatch,
+  onDeleteBatch,
   onOpenConfigModal,
   onLoadDemo,
   isLoading,
 }) => {
   const [showVersions, setShowVersions] = useState(false);
   const [showBatches, setShowBatches] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const isOnline = health?.status === 'ok';
 
@@ -59,7 +63,10 @@ export const Navbar: React.FC<Props> = ({
         {/* Batch selector dropdown */}
         <div className="relative">
           <button
-            onClick={() => setShowBatches(!showBatches)}
+            onClick={() => {
+              setShowBatches(!showBatches);
+              if (showBatches) setPendingDelete(null);
+            }}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-mono transition-colors"
             title="Switch Recovery Batch"
           >
@@ -83,26 +90,62 @@ export const Navbar: React.FC<Props> = ({
                   </div>
                 ) : (
                   batches.map((b) => (
-                    <button
+                    <div
                       key={b.batch_id}
-                      onClick={() => {
-                        onSelectBatch(b.batch_id);
-                        setShowBatches(false);
-                      }}
                       className={`w-full text-left px-3 py-2 hover:bg-slate-800/80 transition-colors flex items-center justify-between font-mono ${
                         b.batch_id === currentBatchId ? 'bg-blue-500/10 text-blue-400 font-semibold' : 'text-slate-300'
                       }`}
                     >
-                      <div className="truncate">
+                      <button
+                        onClick={() => {
+                          onSelectBatch(b.batch_id);
+                          setShowBatches(false);
+                        }}
+                        className="flex-1 text-left truncate min-w-0"
+                      >
                         <span className="block truncate">{b.batch_id}</span>
                         <span className="text-[10px] text-slate-500 font-sans block">
                           {b.n_transactions} transactions • {b.strategies.length} strategies
                         </span>
-                      </div>
+                      </button>
                       {b.batch_id === currentBatchId && (
                         <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0 ml-2" />
                       )}
-                    </button>
+                      {pendingDelete === b.batch_id ? (
+                        <div className="flex items-center gap-1 shrink-0 ml-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteBatch(b.batch_id);
+                              setPendingDelete(null);
+                            }}
+                            className="px-2 py-0.5 rounded bg-red-600 hover:bg-red-500 text-white text-[10px] font-semibold transition-colors"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingDelete(null);
+                            }}
+                            className="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDelete(b.batch_id);
+                          }}
+                          className="p-1.5 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors shrink-0 ml-1"
+                          title={`Delete ${b.batch_id}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   ))
                 )}
               </div>

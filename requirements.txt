@@ -13,6 +13,7 @@ psycopg[binary]>=3.3
 psycopg_pool>=3.2
 # Step 3 backend / MVP API
 fastapi>=0.110
+python-multipart>=0.0.6
 # Starlette 1.x changes the TestClient transport; keep the FastAPI-compatible
 # pre-1.0 line used by the repository's API regression tests.
 starlette>=0.46,<1

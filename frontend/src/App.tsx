@@ -75,10 +75,10 @@ export const App: React.FC = () => {
         }
         if (batchList.status === 'fulfilled' && batchList.value.length > 0) {
           setBatches(batchList.value);
-          // Prefer demo batch or first batch
-          const demoBatch = batchList.value.find((b) => b.n_transactions === 370) || batchList.value[0];
-          if (demoBatch) {
-            loadBatchById(demoBatch.batch_id);
+          // Load the most recent batch (first in list, already sorted by mtime desc)
+          const mostRecent = batchList.value[0];
+          if (mostRecent) {
+            loadBatchById(mostRecent.batch_id);
           }
         }
       } catch (err: any) {
@@ -158,6 +158,25 @@ export const App: React.FC = () => {
     }
   };
 
+  // 4b. Run Batch from CSV Upload
+  const handleCsvSubmit = async (file: File, params: { batch_seed?: number; resource_limits?: ResourceLimits; strategies?: string[] }) => {
+    setIsConfigModalOpen(false);
+    setIsLoading(true);
+    setLoadingMessage(`Processing CSV and running ILP portfolio optimization...`);
+    setError(null);
+    try {
+      const res = await api.uploadCsvBatch(file, params);
+      const freshList = await api.getBatches();
+      setBatches(freshList);
+      await loadBatchById(res.batch_id);
+      setActiveTab('overview');
+    } catch (err: any) {
+      setError(`CSV batch execution error: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // 5. Re-run Comparison
   const handleRunComparison = async (seed: number) => {
     if (!currentBatchId) return;
@@ -166,12 +185,13 @@ export const App: React.FC = () => {
     setError(null);
     try {
       const res = await api.compareStrategies({
-        split: 'demo',
+        batch_id: currentBatchId,
         batch_seed: seed,
       });
       // Refresh current batch data
       const updated = await api.getBatch(res.batch_id);
       setCurrentBatch(updated);
+      setCurrentBatchId(res.batch_id);
       const freshList = await api.getBatches();
       setBatches(freshList);
     } catch (err: any) {
@@ -189,18 +209,37 @@ export const App: React.FC = () => {
     setError(null);
     try {
       const res = await api.executePlan({
-        split: 'demo',
+        batch_id: currentBatchId,
         strategy,
         batch_seed: seed,
       });
       const updated = await api.getBatch(res.batch_id);
       setCurrentBatch(updated);
+      setCurrentBatchId(res.batch_id);
       const freshList = await api.getBatches();
       setBatches(freshList);
     } catch (err: any) {
       setError(`Simulation execution failed: ${err.message}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 6. Delete Batch
+  const handleDeleteBatch = async (batchId: string) => {
+    try {
+      await api.deleteBatch(batchId);
+      const freshList = await api.getBatches();
+      setBatches(freshList);
+      if (currentBatchId === batchId) {
+        setCurrentBatchId(null);
+        setCurrentBatch(null);
+        if (freshList.length > 0) {
+          await loadBatchById(freshList[0].batch_id);
+        }
+      }
+    } catch (err: any) {
+      setError(`Failed to delete batch: ${err.message}`);
     }
   };
 
@@ -213,6 +252,7 @@ export const App: React.FC = () => {
         batches={batches}
         currentBatchId={currentBatchId}
         onSelectBatch={loadBatchById}
+        onDeleteBatch={handleDeleteBatch}
         onOpenConfigModal={() => setIsConfigModalOpen(true)}
         onLoadDemo={handleLoadDemo}
         isLoading={isLoading}
@@ -296,6 +336,7 @@ export const App: React.FC = () => {
         isOpen={isConfigModalOpen}
         onClose={() => setIsConfigModalOpen(false)}
         onSubmit={handleRunConfiguredBatch}
+        onCsvSubmit={handleCsvSubmit}
         isLoading={isLoading}
         defaultLimits={defaultLimits}
         availableSplits={availableSplits}

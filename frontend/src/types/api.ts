@@ -193,4 +193,26 @@ export interface BatchRequestPayload {
   resource_limits?: ResourceLimits;
   strategies?: string[];
   transaction_ids?: string[];
+  batch_id?: string;
+}
+
+export interface CSVIngestionMetadata {
+  source_type: string;
+  input_row_count: number;
+  accepted_row_count: number;
+  rejected_row_count: number;
+  detected_columns: string[];
+  mapped_columns: Record<string, string>;
+  unmapped_columns: string[];
+  derived_features: string[];
+  amount_unit: string;
+  amount_transform_applied: number | null;
+  customer_count: number;
+  warnings: string[];
+}
+
+export interface CSVBatchResponse {
+  batch_id: string;
+  summary: BatchSummary;
+  csv_metadata: CSVIngestionMetadata;
 }

@@ -13,6 +13,7 @@ import {
 import { FullBatchResult, StrategyMetric, StrategyName } from '../../types/api';
 import { StatusBadge } from '../common/StatusBadge';
 import { SimulationDisclaimer } from '../common/SimulationDisclaimer';
+import { formatStrategyAllocation } from '../../utils/allocation';
 
 interface Props {
   batch: FullBatchResult | null;
@@ -125,6 +126,7 @@ export const ComparisonView: React.FC<Props> = ({
             <thead className="bg-slate-950/80 text-slate-400 font-mono border-b border-slate-800 uppercase tracking-wider text-[11px]">
               <tr>
                 <th className="py-3 px-4">Strategy</th>
+                <th className="py-3 px-4">Allocation</th>
                 <th className="py-3 px-4 text-right">Planned Net EV</th>
                 <th className="py-3 px-4 text-right">Simulated Gross</th>
                 <th className="py-3 px-4 text-right">Cost</th>
@@ -170,6 +172,11 @@ export const ComparisonView: React.FC<Props> = ({
                       </p>
                     </td>
 
+                    {/* Allocation */}
+                    <td className="py-3.5 px-4 font-sans text-[11px] text-slate-400 max-w-[200px] whitespace-normal">
+                      {hasRun ? formatStrategyAllocation(batch.plans?.[s.id]) : '—'}
+                    </td>
+
                     {/* Planned Expected Net EV */}
                     <td className="py-3.5 px-4 text-right text-slate-100 font-bold text-sm">
                       {hasRun ? `₹${netEv.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
@@ -189,7 +196,7 @@ export const ComparisonView: React.FC<Props> = ({
                     <td className="py-3.5 px-4 text-right font-bold text-sm">
                       {hasRun ? (
                         <span className={netRecovered >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                          ₹${netRecovered.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          {`₹${netRecovered.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
                         </span>
                       ) : (
                         '—'

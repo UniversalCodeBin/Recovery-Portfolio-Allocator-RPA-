@@ -26,7 +26,8 @@ import uuid
 from math import isfinite
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+import pandas as pd
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -239,6 +240,9 @@ class _ValidatedRequest(BaseModel):
 class BatchRequest(_ValidatedRequest):
     split: str = Field("demo", min_length=1)
     batch_seed: int = Field(0, ge=0, description="Random seed for outcome simulation")
+    batch_id: str | None = Field(
+        None, description="Batch ID to re-compare from stored source data"
+    )
     resource_limits: dict[str, float | None] | None = Field(
         None, description="Shared resource caps; defaults to Step 1 values"
     )
@@ -266,6 +270,7 @@ class ExecuteRequest(_ValidatedRequest):
     split: str = Field("demo", min_length=1)
     strategy: str = "rpa_optimizer"
     batch_seed: int = Field(0, ge=0)
+    batch_id: str | None = None
     resource_limits: dict[str, float | None] | None = None
 
 
@@ -287,6 +292,27 @@ def _load_context(split: str = "demo", transaction_ids: list[str] | None = None)
         transactions = transactions[
             transactions["transaction_id"].isin(transaction_ids)
         ]
+    return transactions, customers, actions
+
+
+def _load_context_from_batch(batch_id: str):
+    """Load transactions, customers, and actions from a persisted batch directory.
+    Used by /recovery/execute and /recovery/compare to re-run on the same data."""
+    from rpa.orchestrator import RUNS_DIR
+
+    batch_dir = RUNS_DIR / batch_id
+    txn_path = batch_dir / "transactions.csv"
+    cust_path = batch_dir / "customers.csv"
+
+    if not txn_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"batch {batch_id} has no stored source data (pre-CSV batch). Use split-based execution instead.",
+        )
+
+    transactions = pd.read_csv(txn_path)
+    customers = pd.read_csv(cust_path) if cust_path.exists() else load_customers()
+    actions = load_actions()
     return transactions, customers, actions
 
 
@@ -354,6 +380,97 @@ def run_batch(req: BatchRequest) -> dict:
         raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"batch failed: {exc}")
+
+
+@app.post("/recovery/batch/csv")
+async def run_batch_from_csv(
+    file: UploadFile = File(...),  # noqa: B008  (FastAPI dependency injection)
+    batch_seed: int = 0,
+    resource_limits: str | None = None,
+    strategies: str | None = None,
+) -> dict:
+    """Create and run a recovery batch from an uploaded Razorpay-style CSV.
+
+    Accepts a CSV file via multipart/form-data upload. The CSV is parsed,
+    validated, and transformed into the canonical RPA feature dataset before
+    being fed into the existing prediction -> EV -> policy -> optimizer pipeline.
+
+    Parameters:
+        file: CSV file (multipart upload)
+        batch_seed: Random seed for outcome simulation
+        resource_limits: JSON string of resource limits (optional)
+        strategies: JSON string of strategy names to run (optional)
+    """
+    import json as json_mod
+
+    from rpa.csv_adapter import AmountUnit, CSVValidationError, ingest_csv
+
+    # Read and validate file size
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=422, detail="uploaded file is empty")
+
+    # Validate content type
+    content_type = file.content_type or ""
+    if not (
+        content_type == "text/csv"
+        or content_type.startswith("application/")
+        or (file.filename and file.filename.endswith(".csv"))
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"expected CSV file, got content-type: {content_type}",
+        )
+
+    try:
+        result = ingest_csv(content, amount_unit=AmountUnit.RUPEES)
+    except CSVValidationError as exc:
+        detail: str | dict = str(exc)
+        if exc.details:
+            detail = {"message": str(exc), "details": exc.details}
+        raise HTTPException(status_code=422, detail=detail)
+
+    # Parse optional JSON parameters
+    limits = default_resource_limits()
+    if resource_limits:
+        try:
+            parsed_limits = json_mod.loads(resource_limits)
+            if isinstance(parsed_limits, dict):
+                limits.update(parsed_limits)
+        except (json_mod.JSONDecodeError, TypeError):
+            raise HTTPException(status_code=422, detail="invalid resource_limits JSON")
+
+    strat_list = None
+    if strategies:
+        try:
+            parsed_strats = json_mod.loads(strategies)
+            if isinstance(parsed_strats, list):
+                strat_list = parsed_strats
+        except (json_mod.JSONDecodeError, TypeError):
+            raise HTTPException(status_code=422, detail="invalid strategies JSON")
+
+    try:
+        actions = load_actions()
+        orch = RPABatchOrchestrator()
+        result_batch = orch.run_batch(
+            transactions=result.transactions_df,
+            actions=actions,
+            customers=result.customers_df,
+            resource_limits=limits,
+            batch_seed=batch_seed,
+            strategies=strat_list,
+        )
+        if result_batch.status == "error":
+            raise HTTPException(status_code=500, detail=result_batch.error)
+        return {
+            "batch_id": result_batch.batch_id,
+            "summary": result_batch.summary(),
+            "csv_metadata": result.metadata,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"batch from CSV failed: {exc}")
 
 
 @app.post("/recovery/preview")
@@ -429,7 +546,12 @@ def run_strategy(strategy_name: str, req: StrategyRequest) -> dict:
 def compare(req: BatchRequest) -> dict:
     """Run all strategies on identical inputs and return a fair comparison."""
     try:
-        transactions, customers, actions = _load_context(req.split, req.transaction_ids)
+        if req.batch_id:
+            transactions, customers, actions = _load_context_from_batch(req.batch_id)
+        else:
+            transactions, customers, actions = _load_context(
+                req.split, req.transaction_ids
+            )
         limits = req.resource_limits or default_resource_limits()
         orch = RPABatchOrchestrator()
         result = orch.run_batch(
@@ -468,7 +590,10 @@ def execute(req: ExecuteRequest) -> dict:
             detail="Real execution is not available through this endpoint. Use /v1/recovery/jobs for production execution.",
         )
     try:
-        transactions, customers, actions = _load_context(req.split)
+        if req.batch_id:
+            transactions, customers, actions = _load_context_from_batch(req.batch_id)
+        else:
+            transactions, customers, actions = _load_context(req.split)
         limits = req.resource_limits or default_resource_limits()
         orch = RPABatchOrchestrator()
         result = orch.run_batch(
@@ -618,6 +743,20 @@ def list_batches() -> list[dict]:
         except Exception:  # noqa: BLE001, S112
             continue
     return out
+
+
+@app.delete("/recovery/batch/{batch_id}")
+def delete_batch(batch_id: str) -> dict:
+    """Delete a persisted recovery batch from disk."""
+    import shutil
+
+    from rpa.orchestrator import RUNS_DIR
+
+    batch_dir = RUNS_DIR / batch_id
+    if not batch_dir.exists() or not batch_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"batch not found: {batch_id}")
+    shutil.rmtree(batch_dir)
+    return {"deleted": batch_id}
 
 
 @app.get("/recovery/actions")

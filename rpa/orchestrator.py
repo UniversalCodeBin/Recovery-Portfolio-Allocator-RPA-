@@ -103,7 +103,14 @@ class BatchResult:
             },
             "verifications": {
                 name: {
-                    "batch_metrics": verif.batch_metrics,
+                    "batch_metrics": {
+                        "total_expected_net_ev": round(
+                            self.plans[name].total_net_ev, 4
+                        ),
+                        "resource_used": self.plans[name].resource_used,
+                        "status": self.plans[name].status,
+                        **verif.batch_metrics,
+                    },
                     "rows": verif.rows,
                 }
                 for name, verif in self.verifications.items()
@@ -292,7 +299,7 @@ class RPABatchOrchestrator:
             resource_limits=resource_limits,
             audit=audit,
         )
-        self._persist(result)
+        self._persist(result, transactions=transactions, customers=customers)
         return result
 
     # ------------------------------------------------------------------
@@ -335,9 +342,14 @@ class RPABatchOrchestrator:
 
     # ------------------------------------------------------------------
     @staticmethod
-    def _persist(result: BatchResult) -> None:
+    def _persist(
+        result: BatchResult,
+        transactions: pd.DataFrame | None = None,
+        customers: pd.DataFrame | None = None,
+    ) -> None:
         """Persist batch run to a JSON file (DB write is optional via Step 1
-        Database when reachable)."""
+        Database when reachable). Also persists source data for CSV batches
+        so that re-execution/compare can reload them without re-uploading."""
         try:
             out_dir = RUNS_DIR / result.batch_id
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -345,6 +357,10 @@ class RPABatchOrchestrator:
                 json.dumps(result.to_dict(), indent=2, default=str), encoding="utf-8"
             )
             result.audit.write(out_dir / "audit.json")
+            if transactions is not None:
+                transactions.to_csv(out_dir / "transactions.csv", index=False)
+            if customers is not None:
+                customers.to_csv(out_dir / "customers.csv", index=False)
         except Exception:  # noqa: BLE001, S110
             # Persistence must never take the pipeline down.
             pass

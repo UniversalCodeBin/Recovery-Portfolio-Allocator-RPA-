@@ -117,24 +117,19 @@ class ExecutionSimulator:
         ``verdicts`` is the full policy screen; only actions with an ALLOW
         verdict are executed. plan's actions must all be in the allowed set —
         any that isn't is recorded as blocked (fail-closed).
+
+        Outcomes are deterministic per (transaction_id, batch_seed). The same
+        transaction with the same seed always produces the same Monte-Carlo
+        realization regardless of strategy, action execution order, or plan
+        ordering.  This is achieved by deriving a per-transaction RNG seed
+        from ``hash(transaction_id, batch_seed)`` instead of consuming a
+        shared per-strategy RNG sequence.
         """
         approved = self._approved_actions(verdicts)
         # Build action id -> column index
         action_idx = {a.action_id: j for j, a in enumerate(actions)}
         txn_idx = {t: i for i, t in enumerate(transactions["transaction_id"].tolist())}
         amounts_by_txn = transactions.set_index("transaction_id")["amount"]
-
-        # Seeded uniform draws for outcome success & partial fraction.
-        rng_success = np.random.default_rng(
-            self._derive_seed(
-                batch_seed, f"{self.sim_config.seed_salt}:success:{plan.name}"
-            )
-        )
-        rng_fraction = np.random.default_rng(
-            self._derive_seed(
-                batch_seed, f"{self.sim_config.seed_salt}:fraction:{plan.name}"
-            )
-        )
 
         rows: list[dict] = []
         for i, txn in enumerate(plan.transaction_ids):
@@ -153,14 +148,26 @@ class ExecutionSimulator:
             )
             recoverable = float(amounts) * (1.0 - self.ev_config.recovery_friction)
 
-            success_draw = rng_success.random()
+            # Per-transaction deterministic RNG: same (txn_id, seed) → same outcome
+            rng_txn_success = np.random.default_rng(
+                self._derive_seed(
+                    batch_seed, f"{self.sim_config.seed_salt}:success:{txn}"
+                )
+            )
+            rng_txn_fraction = np.random.default_rng(
+                self._derive_seed(
+                    batch_seed, f"{self.sim_config.seed_salt}:fraction:{txn}"
+                )
+            )
+
+            success_draw = rng_txn_success.random()
             succeeded = success_draw < p
 
             cost = self._recovery_cost(action)
 
             status = SUCCESSFUL if succeeded else FAILED
             if succeeded:
-                frac_draw = rng_fraction.random()
+                frac_draw = rng_txn_fraction.random()
                 frac = (
                     1.0 + (self.sim_config.partial_low - 1.0) * frac_draw
                     if False

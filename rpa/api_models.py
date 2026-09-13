@@ -126,6 +126,10 @@ class BatchRequest(BaseModel):
     batch_seed: int = Field(
         0, ge=0, description="Random seed for reproducible simulation"
     )
+    batch_id: str | None = Field(
+        None,
+        description="Batch ID to re-compare. When provided, loads source data from the batch directory instead of using split.",
+    )
     resource_limits: ResourceLimitsRequest | None = None
     strategies: list[StrategyName] | None = Field(
         None,
@@ -169,6 +173,10 @@ class ExecuteRequest(BaseModel):
     split: str = Field("demo", min_length=1)
     strategy: StrategyName = StrategyName.RPA_OPTIMIZER
     batch_seed: int = Field(0, ge=0)
+    batch_id: str | None = Field(
+        None,
+        description="Batch ID to re-execute. When provided, loads source data from the batch directory instead of using split.",
+    )
     resource_limits: ResourceLimitsRequest | None = None
     idempotency_key: str | None = Field(
         None,
