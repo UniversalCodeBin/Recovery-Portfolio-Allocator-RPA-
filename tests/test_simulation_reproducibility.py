@@ -121,7 +121,7 @@ class TestDeterministicPerTransaction:
                 action_groups.setdefault(info["action_type"], []).append(info)
 
             # Within each action group, all statuses must be identical
-            for action_type, infos in action_groups.items():
+            for infos in action_groups.values():
                 statuses = {i["status"] for i in infos}
                 if len(statuses) > 1:
                     same_action_diff_outcome += 1
