@@ -138,6 +138,7 @@ Implemented in the current codebase:
 | GET | `/versions` | Component versions |
 | GET | `/model/metadata` | Frozen model info |
 | POST | `/recovery/batch` | Run full recovery batch |
+| POST | `/recovery/batch/csv` | Run batch from CSV file upload |
 | POST | `/recovery/preview` | Predictions + EV + policy screen |
 | POST | `/recovery/strategy/{name}` | Run one strategy |
 | POST | `/recovery/compare` | Fair 4-strategy comparison |
@@ -178,7 +179,7 @@ Implemented in the current codebase:
 | Database | PostgreSQL (optional; demo uses JSON files) |
 | Auth | JWT HS256, PBKDF2 password hashing |
 | Container | Docker (multi-stage), Docker Compose |
-| CI/CD | GitHub Actions (lint, test, security scan, Docker build) |
+| CI/CD | GitHub Actions (lint, test, security scan, Docker build; ruff configured via `ruff.toml`) |
 | Tests | pytest (188 collected — 187 passed, 1 skipped) |
 
 ---

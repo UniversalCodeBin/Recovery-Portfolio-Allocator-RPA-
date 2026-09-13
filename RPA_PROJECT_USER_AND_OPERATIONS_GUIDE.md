@@ -822,6 +822,12 @@ The optimizer might:
 
 Total: 30 retries used (limit: 30), 20 messages used (limit: 20), 250 INR used (limit: 5,000), 5 human slots used (limit: 5).
 
+### Resource Accounting
+
+Resource consumption is tracked from `ActionSpec.resource_requirements` loaded from action definitions (e.g., `recovery_actions.csv`). The optimizer sums `_resource_consumption(action)` for each selected action per resource type. The `resource_used` field in `BatchResult.to_dict()` is populated from the actual selected actions — not from capacity defaults.
+
+The frontend Resource Constraints view displays a reference matrix showing per-action resource requirements. This matrix is documentation only; actual consumption is computed in the backend optimizer (`rpa/optimizer.py`).
+
 ---
 
 ## 12. Policy Engine
@@ -936,6 +942,26 @@ curl http://localhost:8000/recovery/batches
 ```bash
 curl "http://localhost:8000/recovery/explain/batch_abc123/txn_001?strategy=rpa_optimizer"
 ```
+
+#### CSV Batch Import
+
+The CSV workflow allows importing transaction data and recovery actions from a file, enabling bulk batch processing without a database.
+
+```bash
+curl -X POST http://localhost:8000/recovery/batch/csv \
+  -F "file=@recovery_actions.csv" \
+  -F "batch_seed=0" \
+  -F "strategies=no_action,ev_greedy,rpa_optimizer"
+```
+
+The CSV file must follow the `recovery_actions.csv` schema with columns:
+- `transaction_id` — unique transaction identifier
+- `amount` — transaction amount in INR
+- `action_type` — recovery action (retry, payment_link, customer_message, incentive, human_escalation, no_intervention)
+- `resource_requirements` — JSON string of resource consumption (e.g., `{"retry": 1, "messaging": 0, "incentive_budget": 0, "human_slots": 0}`)
+- `direct_cost` — direct cost of the action in INR
+
+CSV ingestion validates each row, maps to the internal `ActionSpec` model, and persists results to `rpa_runs/{batch_id}/`. Resource consumption is calculated from `action.resource_requirements` and summed in the optimizer backend (`optimizer.py`), not from capacity defaults.
 
 ---
 
@@ -1302,7 +1328,7 @@ There is one Playwright test file (`frontend/tests/example.spec.ts`) which is a 
 
 ### What Must Pass
 
-1. All lint checks (ruff + mypy)
+1. All lint checks (ruff + mypy) — ruff configured via `ruff.toml` (ignores `EXE002` for executable files without shebang)
 2. All 188 tests (187 passed, 1 skipped)
 3. Security scans (bandit + safety)
 4. Docker build

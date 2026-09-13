@@ -94,7 +94,7 @@ Payment Failure Data
 | Database | PostgreSQL (optional; demo uses JSON files) |
 | Auth | JWT HS256 + RBAC (ADMIN, MERCHANT_ADMIN, OPERATOR, VIEWER) |
 | Tests | 188 collected — 187 passed, 1 skipped (pytest) |
-| Container | Multi-stage Docker build, non-root user |
+| Container | Multi-stage Docker build, non-root user, ruff.toml lint config |
 
 ---
 
