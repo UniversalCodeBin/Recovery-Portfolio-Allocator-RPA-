@@ -42,3 +42,11 @@ build/
 # Secrets
 .env
 *.env
+
+# Private/scratch files
+FINAL_POLISH_*.md
+PRODUCTION_READINESS_*.md
+RPA_DOCUMENTATION_VERIFICATION.md
+RPA_DOCUMENTATION_VERIFICATION_*.md
+rpa_audit_*.json
+scratch_*.py
